@@ -28,7 +28,8 @@
     "cli": "tsx packages/cli/src/index.ts",
     "example": "tsx examples/run-payment.ts",
     "testnet": "tsx examples/run-testnet.ts",
-    "serve": "tsx examples/run-service.ts"
+    "serve": "tsx examples/run-service.ts",
+    "verify:settle": "tsx examples/verify-settle-leg.ts"
   },
   "dependencies": {
     "@corridor/adapter-kit": "workspace:*",

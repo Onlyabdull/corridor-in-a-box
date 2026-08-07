@@ -123,6 +123,33 @@ only after actually looking. **Every corridor in this repo is currently
 `UNVERIFIED` or `NOT RUNNABLE`**, which is the honest state of the project: no
 lane here has been confirmed against a live anchor yet.
 
+## Proof the settle leg is real
+
+The settle leg has been executed against live Stellar testnet. Reproduce it in
+one command — it funds throwaway keys via friendbot, so it costs nothing:
+
+```bash
+pnpm verify:settle
+```
+
+A captured run:
+
+|           |                                                                                                                                                                                   |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| tx hash   | [`855933c73b85b9071318ff0bfd9213096a1edfaef68417dea1c2e8fb08dfd245`](https://stellar.expert/explorer/testnet/tx/855933c73b85b9071318ff0bfd9213096a1edfaef68417dea1c2e8fb08dfd245) |
+| ledger    | 4024693                                                                                                                                                                           |
+| date      | 2026-08-07                                                                                                                                                                        |
+| operation | `payment` 12.5000000 native → `GBHY4SAO…JC4EOWC6`                                                                                                                                 |
+| memo      | `corridor-settle`                                                                                                                                                                 |
+
+**Scope, precisely.** This proves `StellarSettlementSubmitter` really does build →
+sign (through the `ExternalSigner` port) → submit → poll Horizon until the
+transaction is in a ledger, against the live network. It is **not** a SEP-31
+corridor run: there is no anchor in it, so no SEP-38 quote, no SEP-12 KYC, no
+SEP-31 open/reconcile. Those legs need a conformant receiving anchor and are
+still outstanding — see [ROADMAP](./ROADMAP.md) Phase 1 and
+[docs/operations.md](./docs/operations.md) §1.
+
 ## Going live
 
 Swap the mocks for the real implementations (both ship in this repo):

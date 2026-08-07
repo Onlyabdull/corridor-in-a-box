@@ -11,8 +11,14 @@ system. Items marked ✅ are done.
 - ✅ SEP-12 KYC handoff against `kyc_server`.
 - ✅ A real `SettlementSubmitter` on `@stellar/stellar-sdk` (build → sign →
   submit a native payment, watch Horizon).
+- ✅ The settle leg executed against **live Stellar testnet** — build → sign →
+  submit → confirm on Horizon, reproducible via `pnpm verify:settle`. Captured
+  tx: [`855933c7…08dfd245`](https://stellar.expert/explorer/testnet/tx/855933c73b85b9071318ff0bfd9213096a1edfaef68417dea1c2e8fb08dfd245)
+  (ledger 4024693, 2026-08-07). This is the settle leg **only** — no anchor is
+  involved, so it is not yet a corridor run.
 - ⬜ A demonstrated end-to-end run against the Anchor Platform SEP-31 reference
-  server (corridor #0), captured in the README.
+  server (corridor #0) — quote → comply → open → settle → reconcile with a real
+  counterparty — captured in the README. This is the remaining Phase-1 item.
 
 ## Phase 2 — Durability & correctness
 
