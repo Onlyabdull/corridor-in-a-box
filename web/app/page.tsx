@@ -61,12 +61,13 @@ export default function Home() {
           <div>
             <h2 className="text-2xl font-semibold">Corridors</h2>
             <p className="text-secondary-text">
-              Liveness is surfaced at build time — the binding constraint is a live receiving anchor,
-              not code.
+              The binding constraint is a live receiving anchor, not code. A corridor only shows{" "}
+              <span className="font-medium">verified</span> once its endpoints have been confirmed
+              against the anchor&apos;s published <code>stellar.toml</code> — none have been yet.
             </p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-bg-subtle px-3 py-1 text-xs font-medium text-secondary-text">
-            <Info size={13} className="text-blue-600" /> Build-time snapshot, not a live liveness feed
+            <Info size={13} className="text-blue-600" /> Manifest snapshot — not a live liveness probe
           </span>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

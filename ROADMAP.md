@@ -20,7 +20,13 @@ system. Items marked ✅ are done.
 - ✅ Durable idempotency store (Postgres) + crash-resume of in-flight runs.
 - ✅ `reconcile` polls until settled/timeout; `recovery.timeout_seconds`
   enforced; retry backoff.
-- ✅ Real refund path (reverse settlement), not just a state write.
+- ⬜ Real refund path (reverse settlement). **Not implemented.**
+  `StellarSettlementSubmitter.refund()` unconditionally returns a non-retryable
+  failure — an already-credited payment cannot be reversed unilaterally on
+  chain, which is correct behaviour, but it means the engine's only real
+  recovery is escalation to `held` for manual intervention. A genuine refund
+  path means driving the receiving anchor's SEP-31 refund flow. What ships
+  today is the escalation, not the reversal.
 
 ## Phase 3 — Operability (required before close beta)
 
@@ -39,8 +45,11 @@ system. Items marked ✅ are done.
 
 ## Phase 4 — Corridors
 
-- ✅ Corridor #1 manifest for a live SEP-31 receive-side anchor
-  (`mx-bitso.corridor.yaml`).
+- ⬜ Corridor #1 manifest for a live SEP-31 receive-side anchor.
+  `mx-example.corridor.yaml` exists but is a **template with fictional
+  endpoints** — it demonstrates the manifest shape, it does not describe a lane
+  that exists. This item closes when a real anchor's `stellar.toml` values are
+  in the file and `endpoints_verified_at` is set.
 - ⬜ Additional real corridors as off-ramps come online.
 - ⬜ `ng-cn` becomes runnable the day a compliant RMB SEP-31 off-ramp exists.
 
@@ -51,7 +60,7 @@ system. Items marked ✅ are done.
 - ⬜ SCF Tier-2 grant proposal — structure and milestones drafted in
   [docs/grant-proposal.md](./docs/grant-proposal.md); budget figures and
   submission still pending maintainer input.
-- ⬜ Corridor #1 live: fill `mx-bitso.corridor.yaml` endpoints from the real
+- ⬜ Corridor #1 live: fill `mx-example.corridor.yaml` endpoints from the real
   `stellar.toml` (blocked — needs a verified live anchor domain, not a code
   change).
 

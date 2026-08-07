@@ -7,8 +7,9 @@
 
 import type { Corridor } from "@corridor/manifest";
 import {
+  compareAmounts,
   fail,
-  isValidAmount,
+  isSettleableAmount,
   ok,
   type CorridorError,
   type Outcome,
@@ -57,10 +58,21 @@ export interface RunResult {
   readonly trail: readonly CorridorState[];
 }
 
+export interface ExecuteOptions {
+  /**
+   * Opaque tenant id recorded on the run so later reads can be scoped to their
+   * creator. Callers must derive this from an already-VALIDATED credential (an
+   * authenticated API key), never from the request body — otherwise a client
+   * simply claims someone else's tenancy.
+   */
+  owner?: string;
+}
+
 export async function execute(
   intent: PaymentIntent,
   corridor: Corridor,
   deps: EngineDeps,
+  opts: ExecuteOptions = {},
 ): Promise<Outcome<RunResult>> {
   const store = deps.idempotency ?? new InMemoryIdempotencyStore();
   const now = deps.now ?? (() => Date.now());
@@ -77,12 +89,28 @@ export async function execute(
     return r;
   };
 
-  // --- input guard: never let a malformed amount reach the chain --------
-  if (!isValidAmount(intent.sourceAmount.amount)) {
+  // --- input guard: never let a malformed or non-positive amount reach the
+  // chain. `isSettleableAmount` and not `isValidAmount`: the latter is a syntax
+  // check that accepts a leading minus (subAmounts needs signed values), so it
+  // happily passed "-100.00" all the way to the settlement submitter.
+  if (!isSettleableAmount(intent.sourceAmount.amount)) {
     return fail(
       "AMOUNT_INVALID",
-      `sourceAmount "${intent.sourceAmount.amount}" is not a valid decimal amount`,
+      `sourceAmount "${intent.sourceAmount.amount}" is not a positive decimal amount`,
     );
+  }
+  // Per-corridor ceiling. A manifest that declares max_amount caps any single
+  // payment on that lane; without one there is no upper bound at all.
+  const max = corridor.limits?.max_amount;
+  if (max) {
+    const cmp = compareAmounts(intent.sourceAmount.amount, max);
+    if (!cmp.ok) return cmp;
+    if (cmp.value > 0) {
+      return fail(
+        "AMOUNT_INVALID",
+        `sourceAmount "${intent.sourceAmount.amount}" exceeds corridor ${corridor.id} max_amount ${max}`,
+      );
+    }
   }
 
   // --- idempotency gate + crash resume ---------------------------------
@@ -111,6 +139,7 @@ export async function execute(
     corridorId: corridor.id,
     state: "created",
     version: 0,
+    owner: opts.owner,
   };
   const trail: CorridorState[] = ["created"];
 

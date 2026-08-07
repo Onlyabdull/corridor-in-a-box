@@ -56,8 +56,20 @@ export interface Money {
 
 /** Opaque reference to a party. Real PII lives behind the anchor's SEP-12, never here. */
 export interface PartyRef {
+  /** OUR internal reference for this party. Meaningless to the anchor. */
   readonly id: string;
   readonly jurisdiction?: string;
+  /**
+   * Customer id issued by the RECEIVING anchor's SEP-12, obtained by registering
+   * this party with that anchor (SEP-12 `PUT /customer`) before the payment.
+   *
+   * This is the only identifier the receiving anchor can resolve. `id` above is
+   * ours and means nothing to them, and the operator's own SEP-10 account
+   * identifies the OPERATOR, not the customer — checking KYC against it answers
+   * a question nobody asked. A corridor whose dest exposes a `kyc_server`
+   * requires this to be set; the engine fails closed without it.
+   */
+  readonly sep12Id?: string;
 }
 
 export interface PaymentIntent {

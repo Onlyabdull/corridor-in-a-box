@@ -10,8 +10,11 @@ reconcile → recover` over any standards-compliant anchor pair, and adding a ne
 corridor is a new `*.corridor.yaml` file — not a fork.
 
 **Live demo:** [corridor-in-a-box.vercel.app](https://corridor-in-a-box.vercel.app)
-— the corridor dashboard and a simulated payment walkthrough (corridor data is a
-build-time snapshot, labeled as such on the page).
+— the corridor dashboard and a payment walkthrough. **The walkthrough is a
+simulation**: it drives a re-implementation of the state machine and never
+touches the Stellar network. No corridor in this repo has yet been confirmed
+against a live anchor, so every one of them renders `UNVERIFIED` or
+`NOT RUNNABLE` (see [Liveness](#liveness-has-three-states-and-green-has-to-be-earned)).
 
 This repo is the **open half** of an open-core system. The proprietary half — the
 anchor health/conformance dataset and the route intelligence built on it — lives
@@ -85,22 +88,40 @@ Three boundaries do the work:
 Picking the destination is the binding constraint, not the code. SEP-31 needs a
 _live receiving anchor_ on the destination side, so corridors ship in this order:
 
-| Stage  | Corridor                                                       | Why                                                                                                                                                                        |
-| ------ | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **#0** | `reference.corridor.yaml` (Anchor Platform reference, testnet) | Run it yourself, no agreements. Proves the engine moves through all five verbs against a conformant SEP-31 server. **Start here.**                                         |
-| **#1** | `mx-bitso.corridor.yaml` (Mexico, Bitso-class) / Anclap        | Real money. These anchors run SEP-31 receive-side today, so `corridor plan` reports the lane runnable (fill endpoints from the live stellar.toml).                         |
-| later  | `ng-cn.corridor.yaml` (Nigeria → China)                        | The headline case study, **not** corridor #1. Becomes runnable on the same engine the day a compliant RMB SEP-31 off-ramp exists — fill in `dest.endpoints`, nothing else. |
+| Stage  | Corridor                                                              | Why                                                                                                                                                                                                                                                                |
+| ------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **#0** | `reference.corridor.yaml` (Anchor Platform reference, testnet)        | Run it yourself, no agreements. Proves the engine moves through all five verbs against a conformant SEP-31 server. **Start here.**                                                                                                                                 |
+| **#1** | `mx-example.corridor.yaml` (Mexico) — **a template, not a live lane** | Shows the shape of a real corridor. **Every endpoint in it is fictional** and `corridor plan` reports it `UNVERIFIED`. Becomes real when an anchor relationship exists: replace the URLs from the anchor's published stellar.toml and set `endpoints_verified_at`. |
+| later  | `ng-cn.corridor.yaml` (Nigeria → China)                               | The headline case study, **not** corridor #1. Becomes runnable on the same engine the day a compliant RMB SEP-31 off-ramp exists — fill in `dest.endpoints`, nothing else.                                                                                         |
 
 The CLI makes the constraint visible. `ng-cn` validates structurally, but:
 
 ```
 $ pnpm cli plan corridors/ng-cn.corridor.yaml
+liveness: ✗ NOT RUNNABLE — a required endpoint is missing.
+
 liveness warnings:
   ! dest has no SEP-31 transfer server — corridor cannot settle. NOT runnable.
 ```
 
 That warning _is_ the off-ramp scarcity, surfaced at build time instead of in
 production.
+
+### Liveness has three states, and green has to be earned
+
+A manifest naming an endpoint is not evidence the endpoint exists — anyone can
+type a URL into a YAML file. So `corridor plan` and the dashboard report:
+
+| State          | Meaning                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `NOT RUNNABLE` | A required endpoint is missing outright. The lane cannot settle.                         |
+| `UNVERIFIED`   | Endpoints are present but **nobody has confirmed they resolve**. Not runnable.           |
+| `VERIFIED`     | Endpoints were checked against the anchor's published `stellar.toml` on a recorded date. |
+
+`VERIFIED` requires `dest.endpoints.endpoints_verified_at` — a date a human sets
+only after actually looking. **Every corridor in this repo is currently
+`UNVERIFIED` or `NOT RUNNABLE`**, which is the honest state of the project: no
+lane here has been confirmed against a live anchor yet.
 
 ## Going live
 

@@ -7,6 +7,76 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
 
 ## [Unreleased]
 
+### Fixed — correctness & security
+
+Findings from an audit of this repo. Each was confirmed by execution against the
+code as shipped, and each is now covered by a regression test in
+`tests/security.test.ts`.
+
+- **Negative amounts settled.** `isValidAmount` is a _signed_ syntax check
+  (`subAmounts` needs negatives) and was the only guard at both the HTTP boundary
+  and the engine entry point, so `POST /payments` with `"-100.00"` returned
+  `200 completed` and handed the negative amount to the settlement submitter.
+  Added `isSettleableAmount` (well-formed **and** strictly positive) and used it
+  at both boundaries, plus an optional per-corridor `limits.max_amount` ceiling.
+- **KYC was checked against the wrong account.** The SEP-12 status query was
+  keyed to the operator's own SEP-10 signing account whenever a signer was
+  configured — which is every production wiring — so `comply` answered "is the
+  operator in good standing?" and recorded the result as the _recipient's_
+  verdict. It now queries the recipient's SEP-12 customer id
+  (`PartyRef.sep12Id`) and fails closed when there isn't one. Relatedly,
+  `openTransaction` now sends `receiver_id`/`sender_id`, which it previously
+  omitted entirely.
+- **SEP-10 authentication failed open.** `authToken()` returned `undefined` on
+  every failure path and callers proceeded _anonymously_, so an anchor that
+  errored on `/auth` still had its SEP-12 answer accepted as an authenticated
+  compliance verdict. Auth failure is now a hard, retryable error whenever a
+  signer is configured.
+- **`GET /payments/:key` leaked across tenants.** Any valid API key could read
+  any run — including its `stellarTxHash` — by guessing a caller-chosen
+  idempotency key. Runs now carry an `owner` set from the validated credential,
+  reads are scoped to it, and only the error _code_ is returned rather than the
+  stored message (which carries anchor URLs and upstream response bodies).
+- **Failed authentication was not rate-limited.** The `401` returned before the
+  limiter, so API keys could be brute-forced at line rate. Rate limiting now runs
+  first.
+- **The rate limiter was bypassable.** It keyed off the _unvalidated_ bearer
+  token, so rotating the token minted a fresh bucket per request. It now keys off
+  a recognised key, falling back to the client IP.
+- **The SEP-38 `sell_amount` was discarded.** The anchor's own sell amount was
+  parsed and thrown away, so the settle leg paid the amount originally requested
+  rather than the one the firm quote bound to. Quotes are also now rejected when
+  `buy_amount` contradicts `price × sell_amount` beyond a rounding tolerance.
+- **The web API route lent out its credentials.** It proxied any anonymous
+  caller's body to the internal `@corridor/service` _with the server's API key_
+  attached. Proxying now requires `CORRIDOR_WEB_API_KEY` and fails closed if the
+  proxy is configured without one. Added a request body-size cap; the demo's
+  in-memory run store is now bounded.
+- **Security headers.** The web app now sends CSP, `X-Frame-Options`,
+  `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`.
+- **Stuck spinner.** A failed `fetch` in the payment runner threw with `running`
+  still true, disabling the button until a page reload. Also fixed the failed-step
+  highlight, which was computed from a hardcoded state and never rendered.
+
+### Changed — honesty of reported status
+
+- **Liveness now has three states, not two.** `runnable`/`not runnable` was
+  derived purely from whether an endpoint string was non-empty, so a manifest
+  naming a fictional anchor was reported as healthy by both `corridor plan` and
+  the dashboard. Corridors are now `VERIFIED` (endpoints confirmed against a
+  published `stellar.toml` on a recorded date, via the new
+  `dest.endpoints.endpoints_verified_at`), `UNVERIFIED` (present but unchecked —
+  **the honest default**, and where every corridor in this repo currently sits),
+  or `NOT RUNNABLE`.
+- **`mx-bitso.corridor.yaml` renamed to `mx-example.corridor.yaml`** and stripped
+  of the company name. Its endpoints are and always were fictional; naming a real
+  company on it implied a relationship that does not exist.
+- **Two ROADMAP items reverted from ✅ to ⬜** because they did not survive a code
+  read: Corridor #1 (a template with placeholder endpoints, not a live lane) and
+  "Real refund path (reverse settlement)" (`refund()` unconditionally fails —
+  what ships is escalation to a manual `held`, not a reversal). The grant
+  proposal's corresponding claims were corrected the same way.
+
 ### Added
 
 - GitHub issue and PR templates.
