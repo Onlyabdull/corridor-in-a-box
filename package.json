@@ -29,7 +29,8 @@
     "example": "tsx examples/run-payment.ts",
     "testnet": "tsx examples/run-testnet.ts",
     "serve": "tsx examples/run-service.ts",
-    "verify:settle": "tsx examples/verify-settle-leg.ts"
+    "verify:settle": "tsx examples/verify-settle-leg.ts",
+    "fund:testnet": "tsx examples/fund-testnet-sender.ts"
   },
   "dependencies": {
     "@corridor/adapter-kit": "workspace:*",

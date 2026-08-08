@@ -64,6 +64,19 @@ export const ComplianceSchema = z.object({
   source_jurisdiction: z.string().min(1),
   dest_jurisdiction: z.string().min(1),
   travel_rule_profile: z.string().default("default"),
+  /**
+   * SEP-12 customer `type` for the receiving party.
+   *
+   * This is NOT free-form and cannot be synthesised from a jurisdiction: it must
+   * be one of the types the destination anchor advertises under
+   * `sep12.receiver.types` in its `GET /sep31/info` response. Send a type the
+   * anchor doesn't publish and registration is rejected. `sep31-receiver` is the
+   * conventional name and what the Anchor Platform reference server uses; check
+   * /info for anything else.
+   */
+  sep12_receiver_type: z.string().default("sep31-receiver"),
+  /** SEP-12 customer `type` for the sending party, from `sep12.sender.types`. */
+  sep12_sender_type: z.string().default("sep31-sender"),
 });
 
 export const SettlementSchema = z.object({

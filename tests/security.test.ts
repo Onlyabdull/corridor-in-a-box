@@ -324,14 +324,28 @@ describe("SEP-12 compliance", () => {
 });
 
 describe("SEP-38 quotes", () => {
+  // This fixture is the Anchor Platform reference server's ACTUAL response,
+  // captured live. It is worth stating explicitly because the first version of
+  // the consistency check below was written against an assumed model and the
+  // live anchor rejected it:
+  //
+  //   price        1.0500035     conversion rate EXCLUDING fees
+  //   total_price  1.1666705555  sell_amount / buy_amount, the all-in rate
+  //   sell_amount  10            fee.total 1.00, charged on the sell side
+  //   buy_amount   8.57          and 1.1666705555 × 8.57 ≈ 10 ✓
+  //
+  // So the invariant is `sell ≈ total_price × buy`, NOT `buy ≈ price × sell`,
+  // which is inverted and uses the pre-fee rate.
   const quoteBody =
     (over: Record<string, string> = {}) =>
     () => ({
       id: "q1",
-      price: "1.0000000",
+      price: "1.0500035",
+      total_price: "1.1666705555",
       expires_at: new Date(Date.now() + 60_000).toISOString(),
-      sell_amount: "99.50",
-      buy_amount: "99.50",
+      sell_amount: "10",
+      buy_amount: "8.57",
+      fee: { total: "1.00", asset: "stellar:USDC:GBBD47IF" },
       ...over,
     });
 
@@ -345,25 +359,46 @@ describe("SEP-38 quotes", () => {
       CORRIDOR,
     );
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.value.sourceAmount.amount).toBe("99.50");
+    if (res.ok) expect(res.value.sourceAmount.amount).toBe("10");
   });
 
-  it("rejects a quote whose buy_amount contradicts price x sell_amount", async () => {
-    const stub = anchorStub({
-      quote: quoteBody({ price: "2.0000000", buy_amount: "10.00" }), // should be ~199
-    });
+  it("accepts the reference server's real quote unchanged", async () => {
+    const stub = anchorStub({ quote: quoteBody() });
+    const adapter = new Sep31Adapter(CORRIDOR, { sep10: SIGNER, fetchImpl: stub.fetchImpl });
+    const res = await adapter.requestQuote(intent() as never, CORRIDOR);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.destAmount.amount).toBe("8.57");
+  });
+
+  it("rejects a quote whose total_price x buy_amount contradicts sell_amount", async () => {
+    // total_price 2.0 × buy 8.57 = 17.14, but sell says 10.
+    const stub = anchorStub({ quote: quoteBody({ total_price: "2.0000000" }) });
     const adapter = new Sep31Adapter(CORRIDOR, { sep10: SIGNER, fetchImpl: stub.fetchImpl });
     const res = await adapter.requestQuote(intent() as never, CORRIDOR);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.code).toBe("QUOTE_UNAVAILABLE");
   });
 
-  it("tolerates payout-precision rounding", async () => {
-    // price x sell = 1.10 x 99.50 = 109.45; anchor rounds to 109.45 exactly,
-    // and a cent of drift must not trip the check.
+  it("skips the check rather than guessing when total_price is absent", async () => {
+    const body = quoteBody();
     const stub = anchorStub({
-      quote: quoteBody({ price: "1.1000000", buy_amount: "109.46" }),
+      quote: () => {
+        const b = body() as Record<string, unknown>;
+        delete b.total_price;
+        return b;
+      },
     });
+    const adapter = new Sep31Adapter(CORRIDOR, { sep10: SIGNER, fetchImpl: stub.fetchImpl });
+    const res = await adapter.requestQuote(intent() as never, CORRIDOR);
+    expect(res.ok).toBe(true);
+  });
+
+  it("tolerates payout-precision rounding", async () => {
+    // The reference server's own numbers do not multiply out exactly:
+    // 1.1666705555 × 8.57 = 9.99996766… against a sell_amount of 10. Anchors
+    // round to the payout asset's precision (2dp here) while quoting price to
+    // 10, so an exact-equality check would reject every real quote.
+    const stub = anchorStub({ quote: quoteBody() });
     const adapter = new Sep31Adapter(CORRIDOR, { sep10: SIGNER, fetchImpl: stub.fetchImpl });
     const res = await adapter.requestQuote(intent() as never, CORRIDOR);
     expect(res.ok).toBe(true);

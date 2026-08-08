@@ -36,6 +36,27 @@ function bridgeAsset(code: string, issuer: string): Asset {
   return code.toUpperCase() === "XLM" ? Asset.native() : new Asset(code, issuer);
 }
 
+/**
+ * Encode the anchor's deposit memo in the form the anchor asked for.
+ *
+ * Getting this wrong is not cosmetic: a `hash` memo is 32 raw bytes delivered as
+ * base64, and forcing it through Memo.text() throws ("Expects string, array or
+ * buffer, max 28 bytes"). Even where it fits, the wrong memo type means the
+ * anchor cannot match the incoming payment to its transaction, so the funds
+ * arrive unattributed. Default to text only when the anchor said nothing.
+ */
+function buildMemo(memo: string, type: "text" | "hash" | "id" | undefined): Memo {
+  switch (type) {
+    case "hash":
+      return Memo.hash(Buffer.from(memo, "base64").toString("hex"));
+    case "id":
+      return Memo.id(memo);
+    case "text":
+    default:
+      return Memo.text(memo);
+  }
+}
+
 // --- Signing -------------------------------------------------------------
 // The private key is the most sensitive thing in the system. ExternalSigner is
 // the seam that keeps it out of this process: a KMS/HSM implements `sign` and
@@ -154,7 +175,7 @@ export class StellarSettlementSubmitter implements SettlementSubmitter {
         // Beat the firm-quote expiry: the tx must hit the ledger before the quote dies.
         .setTimeout(req.corridor.fx.quote_ttl_seconds);
 
-      if (req.memo) builder.addMemo(Memo.text(req.memo));
+      if (req.memo) builder.addMemo(buildMemo(req.memo, req.memoType));
 
       const tx = builder.build();
       await attachSignature(tx, this.signer);
@@ -201,7 +222,34 @@ export class StellarSettlementSubmitter implements SettlementSubmitter {
   }
 }
 
+/**
+ * Turn a Horizon failure into something an operator can act on.
+ *
+ * Horizon rejects a bad transaction with a flat `400` and puts the actual reason
+ * in `response.data.extras.result_codes` — `tx_failed` plus per-operation codes
+ * like `op_no_trust` (no trustline for the asset) or `op_underfunded`. Reporting
+ * only "Request failed with status code 400" hides exactly the information
+ * needed to fix it.
+ */
 function describe(cause: unknown): string {
+  const extras = (
+    cause as {
+      response?: {
+        data?: {
+          extras?: {
+            result_codes?: { transaction?: string; operations?: string[] };
+            result_xdr?: string;
+          };
+        };
+      };
+    }
+  )?.response?.data?.extras;
+
+  const codes = extras?.result_codes;
+  if (codes) {
+    const ops = codes.operations?.length ? ` operations=[${codes.operations.join(", ")}]` : "";
+    return `${codes.transaction ?? "tx_failed"}${ops}`;
+  }
   if (cause instanceof Error) return cause.message;
   return String(cause);
 }

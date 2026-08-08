@@ -34,11 +34,11 @@ import type {
 type FetchLike = typeof fetch;
 
 /**
- * How far `buy_amount` may drift from `price × sell_amount` before we treat a
- * firm quote as internally inconsistent. Anchors round to their payout asset's
- * precision (2dp for most fiat) while price is quoted to 7, so exact equality is
- * the wrong test — 0.1% absorbs legitimate rounding without hiding a quote that
- * simply does not add up.
+ * How far `total_price × buy_amount` may drift from `sell_amount` before we
+ * treat a firm quote as internally inconsistent. Anchors round to their payout
+ * asset's precision (2dp for most fiat) while prices are quoted to 7+, so exact
+ * equality is the wrong test — 0.1% absorbs legitimate rounding without hiding a
+ * quote that simply does not add up.
  */
 const QUOTE_TOLERANCE = "0.001";
 
@@ -231,10 +231,14 @@ export class Sep31Adapter implements AnchorAdapter {
       }
       const j = (await res.json()) as {
         id: string;
+        /** Conversion rate EXCLUDING fees. Not the rate the payment executes at. */
         price: string;
+        /** sell_amount / buy_amount — the all-in rate, fees included. */
+        total_price?: string;
         expires_at: string;
         sell_amount: string;
         buy_amount: string;
+        fee?: { total: string; asset: string };
       };
 
       // Honour the anchor's OWN sell_amount, not the amount we asked for. The
@@ -249,23 +253,36 @@ export class Sep31Adapter implements AnchorAdapter {
         );
       }
 
-      // Cross-check the anchor's arithmetic before trusting a firm quote:
-      // buy_amount should be price × sell_amount. A mismatch means either a
-      // broken anchor or one quoting something other than what we asked for.
-      const expectedBuy = applyPrice(sellAmount, j.price);
-      if (expectedBuy.ok && isValidAmount(j.buy_amount)) {
-        const drift = subAmounts(j.buy_amount, expectedBuy.value);
-        const tolerance = applyPrice(expectedBuy.value, QUOTE_TOLERANCE);
-        if (drift.ok && tolerance.ok) {
-          const abs = drift.value.startsWith("-") ? drift.value.slice(1) : drift.value;
-          const within = compareAmounts(abs, tolerance.value);
-          if (within.ok && within.value > 0) {
-            return fail(
-              "QUOTE_UNAVAILABLE",
-              `${this.name}: quote ${j.id} is internally inconsistent — ` +
-                `buy_amount ${j.buy_amount} != price ${j.price} × sell_amount ${sellAmount} ` +
-                `(expected ~${expectedBuy.value})`,
-            );
+      // Cross-check the anchor's arithmetic before trusting a firm quote.
+      //
+      // Get the SEP-38 semantics right, because they are easy to get wrong:
+      //   price        conversion rate EXCLUDING fees
+      //   total_price  sell_amount / buy_amount, i.e. the all-in rate
+      //   fee          charged in fee.asset, typically the sell side
+      // so the invariant that actually holds is
+      //   sell_amount ≈ total_price × buy_amount
+      // NOT `buy_amount ≈ price × sell_amount`, which is wrong twice over
+      // (inverted, and using the pre-fee rate). Against the Anchor Platform
+      // reference server: sell 10, fee 1.00, price 1.0500035,
+      // total_price 1.1666705555, buy 8.57 — and 1.1666705555 × 8.57 ≈ 10. ✓
+      //
+      // Only checkable when the anchor sends total_price; skip rather than guess.
+      if (j.total_price && isValidAmount(j.total_price) && isValidAmount(j.buy_amount)) {
+        const impliedSell = applyPrice(j.buy_amount, j.total_price);
+        if (impliedSell.ok) {
+          const drift = subAmounts(impliedSell.value, sellAmount);
+          const tolerance = applyPrice(sellAmount, QUOTE_TOLERANCE);
+          if (drift.ok && tolerance.ok) {
+            const abs = drift.value.startsWith("-") ? drift.value.slice(1) : drift.value;
+            const within = compareAmounts(abs, tolerance.value);
+            if (within.ok && within.value > 0) {
+              return fail(
+                "QUOTE_UNAVAILABLE",
+                `${this.name}: quote ${j.id} is internally inconsistent — ` +
+                  `total_price ${j.total_price} × buy_amount ${j.buy_amount} = ` +
+                  `${impliedSell.value}, but sell_amount is ${sellAmount}`,
+              );
+            }
           }
         }
       }
@@ -280,6 +297,69 @@ export class Sep31Adapter implements AnchorAdapter {
       });
     } catch (cause) {
       return fail("ANCHOR_UNAVAILABLE", `${this.name}: quote request failed`, {
+        retryable: true,
+        cause,
+      });
+    }
+  }
+
+  /**
+   * SEP-12 `PUT /customer` — register a customer with the receiving anchor and
+   * get back the id that identifies them in every later call.
+   *
+   * This is deliberately NOT part of `AnchorAdapter`, and the engine never calls
+   * it. Registration is the SENDING side's job: it collects and verifies the
+   * PII, hands it to the receiving anchor once, and thereafter refers to the
+   * customer by opaque id. Keeping it off the port is what lets the engine
+   * orchestrate payments without PII ever passing through it — `execute()` only
+   * ever sees a `sep12Id`.
+   *
+   * Call this from your deployment layer before `execute()`, and put the
+   * returned id on `intent.recipient.sep12Id`.
+   *
+   * `fields` are the SEP-12 fields the anchor asks for; which ones are required
+   * comes from its `GET /customer` response and varies per anchor and per type.
+   */
+  async registerCustomer(
+    fields: Record<string, string>,
+    opts: { type?: string; account?: string } = {},
+  ): Promise<Outcome<string>> {
+    const kyc = this.anchor.endpoints.kyc_server;
+    if (!kyc) {
+      return fail("KYC_REQUIRED", `${this.name}: anchor exposes no SEP-12 KYC server`);
+    }
+    const auth = await this.authToken();
+    if (!auth.ok) return auth;
+    try {
+      const res = await this.fetchImpl(`${kyc}/customer`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          ...this.authHeader(auth.value),
+        },
+        body: JSON.stringify({
+          ...((opts.account ?? this.sep10?.account)
+            ? { account: opts.account ?? this.sep10?.account }
+            : {}),
+          ...(opts.type ? { type: opts.type } : {}),
+          ...fields,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        return fail(
+          "KYC_REQUIRED",
+          `${this.name}: SEP-12 PUT /customer HTTP ${res.status}${detail ? ` — ${detail.slice(0, 200)}` : ""}`,
+          { retryable: res.status >= 500 },
+        );
+      }
+      const j = (await res.json()) as { id?: string };
+      if (!j.id) {
+        return fail("KYC_REQUIRED", `${this.name}: SEP-12 PUT /customer returned no id`);
+      }
+      return ok(j.id);
+    } catch (cause) {
+      return fail("ANCHOR_UNAVAILABLE", `${this.name}: SEP-12 registration failed`, {
         retryable: true,
         cause,
       });
@@ -322,7 +402,7 @@ export class Sep31Adapter implements AnchorAdapter {
     try {
       const url = new URL(`${kyc}/customer`);
       url.searchParams.set("id", sep12Id);
-      url.searchParams.set("type", `${corridor.compliance.dest_jurisdiction}:receiver`);
+      url.searchParams.set("type", corridor.compliance.sep12_receiver_type);
       const res = await this.fetchImpl(url.toString(), {
         headers: this.authHeader(auth.value),
       });
@@ -380,25 +460,46 @@ export class Sep31Adapter implements AnchorAdapter {
           // anchor's own response rather than echoing what we asked for.
           amount: quote.sourceAmount.amount,
           asset_code: corridor.settlement.bridge_asset,
+          asset_issuer: corridor.settlement.asset_issuer,
+          // SEP-31 requires destination_asset whenever a quote_id is supplied —
+          // the quote fixes a specific sell→buy pair, and the anchor rejects the
+          // request (400) if the transaction doesn't name the same buy asset.
+          destination_asset: corridor.dest.asset,
           quote_id: quote.id,
           receiver_id: intent.recipient.sep12Id,
           ...(intent.sender.sep12Id ? { sender_id: intent.sender.sep12Id } : {}),
+          // Payout instructions, keyed by the names the anchor publishes under
+          // `fields.transaction` in GET /sep31/info.
+          fields: { transaction: intent.destinationFields ?? {} },
         }),
       });
       if (!res.ok) {
-        return fail("ANCHOR_UNAVAILABLE", `${this.name}: open-tx HTTP ${res.status}`, {
-          retryable: res.status >= 500,
-        });
+        // Include the anchor's own explanation. A bare status code turns every
+        // 400 into a guessing game about which field it disliked.
+        const detail = await res.text().catch(() => "");
+        return fail(
+          "ANCHOR_UNAVAILABLE",
+          `${this.name}: open-tx HTTP ${res.status}${detail ? ` — ${detail.slice(0, 300)}` : ""}`,
+          { retryable: res.status >= 500 },
+        );
       }
       const j = (await res.json()) as {
         id: string;
         stellar_account_id: string;
         stellar_memo?: string;
+        stellar_memo_type?: string;
       };
+      const memoType = j.stellar_memo_type?.toLowerCase();
       return ok<OpenTransaction>({
         transactionId: j.id,
         depositAddress: j.stellar_account_id,
         memo: j.stellar_memo,
+        // Carry the anchor's memo TYPE through. Assuming "text" corrupts a hash
+        // memo (32 bytes, over the 28-byte text cap) and the submit fails.
+        memoType:
+          memoType === "hash" || memoType === "id" || memoType === "text"
+            ? memoType
+            : undefined,
       });
     } catch (cause) {
       return fail("ANCHOR_UNAVAILABLE", `${this.name}: open-tx failed`, {

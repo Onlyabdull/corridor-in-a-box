@@ -16,9 +16,17 @@ system. Items marked ✅ are done.
   tx: [`855933c7…08dfd245`](https://stellar.expert/explorer/testnet/tx/855933c73b85b9071318ff0bfd9213096a1edfaef68417dea1c2e8fb08dfd245)
   (ledger 4024693, 2026-08-07). This is the settle leg **only** — no anchor is
   involved, so it is not yet a corridor run.
-- ⬜ A demonstrated end-to-end run against the Anchor Platform SEP-31 reference
-  server (corridor #0) — quote → comply → open → settle → reconcile with a real
-  counterparty — captured in the README. This is the remaining Phase-1 item.
+- ✅ SEP-10 auth, SEP-12 registration (both parties), SEP-38 firm quote and
+  SEP-31 `POST /transactions` all executed against the **Anchor Platform
+  reference server** running locally (`scripts/reference-anchor.sh up`), with
+  the settle leg landing 10 USDC on its deposit address — tx
+  [`4aea2432…`](https://stellar.expert/explorer/testnet/tx/4aea2432696c43104662fea98c86cecdfb12e2e831426e3a90e616eb7f183897),
+  ledger 4030910, correctly attributed by hash memo. Captured in the README.
+- ⬜ `reconcile → completed` against a real counterparty. The run above reaches
+  `settled` and then polls: the reference server's Stellar observer sat on a
+  stale cursor, never matched the payment, and left the transaction at
+  `pending_sender`. The engine's timeout/recovery path is what ran. **This leg
+  remains unproven end to end** and is the last open Phase-1 item.
 
 ## Phase 2 — Durability & correctness
 

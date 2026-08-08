@@ -80,6 +80,20 @@ export interface PaymentIntent {
   readonly recipient: PartyRef;
   /** What the sender is putting in, in the corridor's source asset. */
   readonly sourceAmount: Money;
+  /**
+   * SEP-31 transaction fields the DESTINATION anchor requires in order to pay
+   * out — routing number, account number, deposit type, and so on.
+   *
+   * The anchor decides the names: they come from `fields.transaction` in its
+   * `GET /sep31/info` response, where each is marked optional or not. Send an
+   * empty set to an anchor that requires them and it rejects the transaction
+   * ("'fields' field cannot be empty"). The values are per-payment, which is why
+   * they live on the intent rather than the manifest.
+   *
+   * These are payout instructions, not identity documents — customer PII still
+   * goes to the anchor through SEP-12, never through here.
+   */
+  readonly destinationFields?: Readonly<Record<string, string>>;
 }
 
 // --- Decimal-safe money math ---------------------------------------------

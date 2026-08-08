@@ -123,6 +123,43 @@ only after actually looking. **Every corridor in this repo is currently
 `UNVERIFIED` or `NOT RUNNABLE`**, which is the honest state of the project: no
 lane here has been confirmed against a live anchor yet.
 
+## Proof against a real SEP-31 anchor
+
+`scripts/reference-anchor.sh up` stands up the SDF **Anchor Platform reference
+server** locally under podman — a conformant SEP-31 counterparty, no agreements
+and no credentials required. `pnpm fund:testnet` then gives the sending account a
+USDC trustline and balance, and `pnpm testnet` drives a payment across it.
+
+A captured run on **2026-08-08**, corridor `reference-testnet`:
+
+```
+created → quoted → compliant → opened → settling → settled → (polling reconcile)
+```
+
+Every leg below happened against the anchor and is visible in _its_ logs, not
+just ours:
+
+| Leg               | Standard | Evidence                                                                                                                                                                                                 |
+| ----------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| auth              | SEP-10   | challenge signed and exchanged for a JWT                                                                                                                                                                 |
+| register sender   | SEP-12   | `GET /customer?id=…&type=sep31-sender`                                                                                                                                                                   |
+| register receiver | SEP-12   | `GET /customer?id=…&type=sep31-receiver`                                                                                                                                                                 |
+| quote             | SEP-38   | `GET /rate?type=firm&sell_asset=stellar:USDC:GBBD47IF…` → `quote_created`                                                                                                                                |
+| open              | SEP-31   | `POST /transactions` → `transaction_created`, tx `06e721a9-96c3-49f0-86e2-83c02f75306c`                                                                                                                  |
+| **settle**        | Horizon  | [`4aea2432…7f183897`](https://stellar.expert/explorer/testnet/tx/4aea2432696c43104662fea98c86cecdfb12e2e831426e3a90e616eb7f183897) — **10.0000000 USDC** to the anchor's deposit address, ledger 4030910 |
+
+The settle memo is a `hash` memo whose base64 decodes to `06e721a9-96c3-49f0-86e2-83c02f75`
+— the anchor's own transaction id, which is how it attributes the incoming payment.
+
+**Where it stops, precisely.** `reconcile` did **not** reach `completed`. The
+payment is on the ledger and correctly attributed, but the reference server's
+Stellar observer never advanced past a stale cursor, so it never matched the
+payment to its transaction and the transaction stayed `pending_sender`. That is
+the anchor's back-office plumbing, not the engine — but it means **the
+`reconcile → completed` leg is still unproven against a real counterparty**, and
+the engine's timeout/recovery path is what actually ran. Closing that is the
+remaining Phase-1 item.
+
 ## Proof the settle leg is real
 
 The settle leg has been executed against live Stellar testnet. Reproduce it in
