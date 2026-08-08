@@ -1,6 +1,8 @@
 {
-  "name": "@corridor/stellar",
+  "name": "@corridor/probe",
   "version": "0.1.0",
+  "description": "Probe a Stellar anchor's SEP conformance from its published stellar.toml.",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -11,9 +13,6 @@
   "main": "./src/index.ts",
   "dependencies": {
     "@corridor/types": "workspace:*",
-    "@corridor/manifest": "workspace:*",
-    "@corridor/engine": "workspace:*",
-    "@corridor/sep31": "workspace:*",
     "@stellar/stellar-sdk": "^16.2.0"
   }
 }

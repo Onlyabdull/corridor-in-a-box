@@ -1,0 +1,71 @@
+# Probe every anchor in contracts/anchors.json and record what was found in the
+# on-chain registry.
+#
+# This replaces the old nightly-live-anchor job, which passed green while
+# skipping every test because its secrets were never configured — a check that
+# cannot fail is not a check. This one is different in two ways:
+#
+#   1. It FAILS if a probe cannot run, rather than skipping silently.
+#   2. It does not fail when an anchor turns out to be broken. Recording that an
+#      anchor stopped serving SEP-31 is the job working, not the job breaking.
+#      The registry exists to say true things, including unflattering ones.
+#
+# Without ATTESTER_SECRET the job still runs the probes and prints the results,
+# it just cannot write them — so the probe path stays continuously exercised
+# even before a signing key is configured, and the log says plainly which mode
+# it ran in.
+name: attest-anchors
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      domains:
+        description: "Space-separated domains to probe (default: contracts/anchors.json)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    # Job-level so the `if:` conditions below can see it. A step-level env is not
+    # in scope for that step's own `if:`.
+    env:
+      ATTESTER_SECRET: ${{ secrets.ATTESTER_SECRET }}
+      STELLAR_NETWORK: ${{ vars.STELLAR_NETWORK || 'testnet' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Probe first and always. This half needs no credentials, so it verifies
+      # the probe logic against live anchors on every run regardless of whether
+      # the registry can be written to.
+      - name: Probe anchors
+        run: |
+          domains="${{ inputs.domains }}"
+          if [ -z "$domains" ]; then
+            domains=$(node -p "require('./contracts/anchors.json').domains.join(' ')")
+          fi
+          echo "probing: $domains"
+          for d in $domains; do
+            pnpm probe:anchor "$d"
+          done
+
+      - name: Submit attestations
+        if: ${{ env.ATTESTER_SECRET != '' }}
+        run: pnpm attest ${{ inputs.domains }}
+
+      - name: Note when attestation is not configured
+        if: ${{ env.ATTESTER_SECRET == '' }}
+        run: |
+          echo "::warning::ATTESTER_SECRET is not set — probes ran but nothing was" \
+               "written on chain. Set the secret to an enrolled attester key to" \
+               "keep the registry fresh."

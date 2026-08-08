@@ -32,12 +32,15 @@
     "verify:settle": "tsx examples/verify-settle-leg.ts",
     "fund:testnet": "tsx examples/fund-testnet-sender.ts",
     "probe:anchor": "tsx examples/probe-anchor.ts",
-    "registry:read": "tsx examples/read-registry.ts"
+    "registry:read": "tsx examples/read-registry.ts",
+    "attest": "tsx examples/attest.ts"
   },
   "dependencies": {
     "@corridor/adapter-kit": "workspace:*",
+    "@corridor/attester": "workspace:*",
     "@corridor/engine": "workspace:*",
     "@corridor/manifest": "workspace:*",
+    "@corridor/probe": "workspace:*",
     "@corridor/registry": "workspace:*",
     "@corridor/router": "workspace:*",
     "@corridor/sep31": "workspace:*",
@@ -47,7 +50,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
-    "@stellar/stellar-sdk": "^13.0.0",
+    "@stellar/stellar-sdk": "^16.2.0",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.0",
     "eslint": "^9.17.0",
