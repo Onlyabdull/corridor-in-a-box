@@ -242,9 +242,23 @@ describe("state machine", () => {
     expect(canTransition("completed", "settling")).toBe(false);
   });
 
-  it("allows recovery to loop back into settling", () => {
-    expect(canTransition("settling", "recovering")).toBe(true);
-    expect(canTransition("recovering", "settling")).toBe(true);
+  it("routes the settle retry loop through `retrying`, not `recovering`", () => {
+    // These were one state, and this test used to assert
+    // `canTransition("recovering", "settling") === true` — which, combined with
+    // `settled -> recovering`, made `settled -> recovering -> settling` a legal
+    // path: a re-submission of a payment that had already gone out. A property
+    // test walking the graph found it. The two kinds of recovery are now
+    // distinct so the double-spend is unreachable by construction.
+    expect(canTransition("settling", "retrying")).toBe(true);
+    expect(canTransition("retrying", "settling")).toBe(true);
+
+    // `recovering` is terminal-bound and cannot get back to the chain.
+    expect(canTransition("recovering", "settling")).toBe(false);
     expect(canTransition("recovering", "refunded")).toBe(true);
+    expect(canTransition("recovering", "held")).toBe(true);
+
+    // And the path that motivated the split stays closed.
+    expect(canTransition("settled", "settling")).toBe(false);
+    expect(canTransition("settled", "recovering")).toBe(true);
   });
 });

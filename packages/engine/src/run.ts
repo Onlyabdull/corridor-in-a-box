@@ -287,7 +287,10 @@ export async function execute(
       const action = recover(corridor, s.error.retryable, attempt);
       if (action.kind === "retry") {
         attempt = action.attempt;
-        const back = await advance("recovering");
+        // `retrying`, not `recovering`: this settle attempt failed BEFORE money
+        // moved, so going round again is safe. `recovering` is terminal-bound
+        // and cannot re-enter `settling` — see the note in state.ts.
+        const back = await advance("retrying");
         if (!back.ok) return die(back.error);
         await sleep(backoffMs(attempt));
         continue;
