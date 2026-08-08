@@ -123,6 +123,59 @@ only after actually looking. **Every corridor in this repo is currently
 `UNVERIFIED` or `NOT RUNNABLE`**, which is the honest state of the project: no
 lane here has been confirmed against a live anchor yet.
 
+## The anchor registry (on-chain)
+
+The engine answers "can this corridor settle?". The registry answers the question
+underneath it: **does this anchor actually do what its `stellar.toml` claims?**
+
+Two Soroban contracts, live on testnet:
+
+|          |                                                                                                                                                                         |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| registry | [`CDFOVONWR3GGMGH2OC7YATRZE64RKSRAS7UMF7R2TSC6LNNO5G32RSX4`](https://stellar.expert/explorer/testnet/contract/CDFOVONWR3GGMGH2OC7YATRZE64RKSRAS7UMF7R2TSC6LNNO5G32RSX4) |
+| attester | [`CAHSKTAVHIES6MX2DUGNBA4VDB77WYNKEIZPOT7QX2RMJUL5RUIVKX2L`](https://stellar.expert/explorer/testnet/contract/CAHSKTAVHIES6MX2DUGNBA4VDB77WYNKEIZPOT7QX2RMJUL5RUIVKX2L) |
+
+The registry stores **facts**: which SEPs a domain advertises, the SHA-256 of the
+`stellar.toml` they were read from, which conformance probes passed, and the
+ledger someone last checked. No score, no ranking, no recommendation — those are
+judgements, they depend on your risk appetite, and they belong in your
+`RouteResolver`, not in a public record. **Verifiable facts are the public good;
+the interpretation is the product.**
+
+### Why it separates "advertises" from "works"
+
+A live attestation of `testanchor.stellar.org`, produced by `pnpm probe:anchor`
+and submitted on chain:
+
+```
+$ pnpm registry:read
+
+testanchor.stellar.org
+  advertises     SEP-1, SEP-6, SEP-10, SEP-12, SEP-24, SEP-31, SEP-38
+  probes passed  toml_fetch, sep10_auth, sep38_quote, sep12_status
+  probes FAILED  sep31_info
+  attested at    ledger 4032636
+  serves SEP-31  NO
+
+usable SEP-31 off-ramps (attested + fresh): none
+```
+
+That anchor **advertises SEP-31 in its toml and returns an empty receive list**.
+Anything reading the toml alone would call the lane runnable. `serves_sep31()`
+returns `NO` because it requires the capability to be both advertised _and_
+probed green — the same distinction the three-state liveness above enforces, now
+as a public artifact anyone can check rather than a claim in this repo.
+
+Every record carries `attested_ledger`, so staleness is visible on chain. An
+attestation is never wrong, only old, and a consumer must be able to see the
+difference without trusting the writer to have pruned it.
+
+```bash
+pnpm probe:anchor testanchor.stellar.org   # probe a live anchor, print the facts
+pnpm registry:read                         # read the registry via @corridor/registry
+cd contracts && cargo test                 # 21 contract tests
+```
+
 ## Proof against a real SEP-31 anchor
 
 `scripts/reference-anchor.sh up` stands up the SDF **Anchor Platform reference

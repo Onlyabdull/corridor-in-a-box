@@ -8,3 +8,6 @@ dist/
 .env
 .env.local
 MAINTAINER.md
+
+# Rust / Soroban build output
+contracts/target/

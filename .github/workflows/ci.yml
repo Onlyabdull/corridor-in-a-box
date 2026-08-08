@@ -5,6 +5,30 @@ on:
   pull_request:
 
 jobs:
+  # The Soroban contracts are a separate toolchain from the TypeScript monorepo,
+  # so they get their own job: fmt, clippy-as-errors, the full test suite, and a
+  # real wasm build. The wasm build matters — a contract that compiles natively
+  # can still fail to link for wasm32 (two contracts exporting __constructor, for
+  # one), and that only shows up here.
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - run: cargo build --release --target wasm32v1-none
+
   build:
     runs-on: ubuntu-latest
     steps:
