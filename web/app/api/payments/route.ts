@@ -1,5 +1,16 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { runPayment } from "@/lib/engine-sim";
+
+// web/ deliberately doesn't depend on any @corridor/* workspace package (see
+// the note in lib/registry.ts) — small, self-contained mirror rather than a
+// cross-package import, same reasoning as elsewhere in this app.
+function constantTimeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 // POST /api/payments — mirrors @corridor/service's POST /payments.
 //
@@ -69,7 +80,7 @@ export async function POST(req: Request) {
       );
     }
     const presented = req.headers.get("authorization");
-    if (presented !== `Bearer ${required}`) {
+    if (!presented || !constantTimeEqual(presented, `Bearer ${required}`)) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
     return proxyToService(serviceUrl, body);

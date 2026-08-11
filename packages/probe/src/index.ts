@@ -16,6 +16,9 @@
 
 import { createHash } from "node:crypto";
 import { Keypair, TransactionBuilder, type Transaction } from "@stellar/stellar-sdk";
+import { isSafeUrl } from "./url-safety";
+
+export { isSafeUrl } from "./url-safety";
 
 /** SEP numbers in registry bit order. Must match SEP_NUMBERS in contracts/registry. */
 export const SEP_NUMBERS = [1, 6, 10, 12, 24, 31, 38] as const;
@@ -87,15 +90,17 @@ const TOML_ENDPOINTS: ReadonlyArray<{ key: string; sep: SepNumber }> = [
 /**
  * Read a top-level key from a stellar.toml.
  *
- * Deliberately not a full TOML parser: only bare `KEY = "value"` at the start of
- * a line is accepted, which is how every endpoint key is written. Anything
- * inside a `[[CURRENCIES]]` table or similar is ignored rather than
- * misattributed to the document root.
+ * Deliberately not a full TOML parser: only bare `KEY = "value"` or
+ * `KEY = 'value'` at the start of a line is accepted, which is how every
+ * endpoint key is written — TOML allows either quote style for a basic
+ * string, and real anchors use both (cowrie.exchange's live toml is entirely
+ * single-quoted). Anything inside a `[[CURRENCIES]]` table or similar is
+ * ignored rather than misattributed to the document root.
  */
 export function tomlValue(toml: string, key: string): string | undefined {
   const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const m = toml.match(new RegExp(`^[ \\t]*${escaped}[ \\t]*=[ \\t]*"([^"]*)"`, "m"));
-  const value = m?.[1]?.trim();
+  const m = toml.match(new RegExp(`^[ \\t]*${escaped}[ \\t]*=[ \\t]*(?:"([^"]*)"|'([^']*)')`, "m"));
+  const value = (m?.[1] ?? m?.[2])?.trim();
   return value ? value : undefined;
 }
 
@@ -113,8 +118,15 @@ export async function probeAnchor(
   let probesPassed = 0;
   let tomlHash = ZERO_HASH;
 
-  const get = (url: string, init?: RequestInit) =>
-    doFetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  // Single choke point: every endpoint fetched past the initial SEP-1 request
+  // is a URL the anchor's own stellar.toml supplied. Refuse anything that
+  // isn't a public https:// host before it's dereferenced — see url-safety.ts.
+  const get = (url: string, init?: RequestInit) => {
+    if (!isSafeUrl(url)) {
+      return Promise.reject(new Error(`refusing to fetch unsafe url: ${url}`));
+    }
+    return doFetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  };
 
   const record = (probe: ProbeName, passed: boolean, detail: string) => {
     probesRun |= probeBit(probe);

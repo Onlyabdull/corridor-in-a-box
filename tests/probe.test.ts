@@ -13,6 +13,7 @@ import {
 import {
   decodeProbes,
   decodeSeps,
+  isSafeUrl,
   probeAnchor,
   probeBit,
   sepBit,
@@ -161,6 +162,16 @@ describe("tomlValue", () => {
     expect(tomlValue('DIRECT_PAYMENT_SERVER = ""', "DIRECT_PAYMENT_SERVER")).toBeUndefined();
   });
 
+  it("reads a single-quoted value — valid TOML that real anchors use (e.g. cowrie.exchange)", () => {
+    expect(tomlValue("WEB_AUTH_ENDPOINT = 'https://a.example/auth'", "WEB_AUTH_ENDPOINT")).toBe(
+      "https://a.example/auth",
+    );
+  });
+
+  it("treats an empty single-quoted value as absent too", () => {
+    expect(tomlValue("DIRECT_PAYMENT_SERVER = ''", "DIRECT_PAYMENT_SERVER")).toBeUndefined();
+  });
+
   it("does not confuse a key inside a table with a top-level one", () => {
     // `code` appears under [[CURRENCIES]]; asking for it must not return the
     // currency's value as though it were a document-root key.
@@ -168,6 +179,55 @@ describe("tomlValue", () => {
     // Indented under a table — the current reader accepts leading whitespace, so
     // this documents the known limitation rather than pretending otherwise.
     expect(tomlValue(toml, "DIRECT_PAYMENT_SERVER")).toBe("https://wrong.example");
+  });
+});
+
+describe("isSafeUrl", () => {
+  it("rejects loopback, link-local/metadata, RFC1918, and non-https URLs", () => {
+    const bad = [
+      "http://169.254.169.254/latest/meta-data", // cloud metadata endpoint
+      "https://127.0.0.1/",
+      "https://localhost/",
+      "https://10.0.0.5/",
+      "https://172.16.0.5/",
+      "https://192.168.1.5/",
+      "https://[::1]/",
+      "https://[fe80::1]/",
+      "https://[fc00::1]/",
+      "http://a.example/", // right host, wrong scheme
+      "not a url",
+    ];
+    for (const url of bad) expect(isSafeUrl(url)).toBe(false);
+  });
+
+  it("accepts an ordinary public https URL", () => {
+    expect(isSafeUrl("https://a.example/sep31")).toBe(true);
+  });
+});
+
+describe("probeAnchor — SSRF guard", () => {
+  it("refuses to fetch a WEB_AUTH_ENDPOINT pointed at an internal address", async () => {
+    // Simulates a malicious/compromised anchor whose stellar.toml points a
+    // SEP endpoint at an internal or metadata address, reachable via the
+    // repo's own "open a PR to add an anchor domain" onboarding flow.
+    const maliciousToml = FULL_TOML.replace(
+      'WEB_AUTH_ENDPOINT = "https://a.example/auth"',
+      'WEB_AUTH_ENDPOINT = "http://169.254.169.254/latest/meta-data"',
+    );
+    const { fetchImpl, calls } = stub({ toml: maliciousToml });
+    const r = await probeAnchor("a.example", { fetchImpl });
+
+    expect(passed(r, "sep10_auth")).toBe(false);
+    const outcome = r.outcomes.find((o) => o.probe === "sep10_auth");
+    expect(outcome?.detail).toContain("refusing to fetch unsafe url");
+    // The unsafe URL must never actually be dereferenced.
+    expect(calls.some((c) => c.includes("169.254.169.254"))).toBe(false);
+  });
+
+  it("still probes normally when every endpoint is a safe https URL (regression guard)", async () => {
+    const { fetchImpl } = stub();
+    const r = await probeAnchor("a.example", { fetchImpl });
+    expect(passed(r, "sep10_auth")).toBe(true);
   });
 });
 

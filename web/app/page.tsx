@@ -3,7 +3,7 @@ import { ArrowRight, Boxes, ShieldCheck, Repeat, Activity, Info, Link2 } from "l
 import { Button } from "@/components/ui/Button";
 import { CorridorCard } from "@/components/CorridorCard";
 import { AnchorCard } from "@/components/AnchorCard";
-import { corridors } from "@/lib/corridors";
+import { corridors, liveness } from "@/lib/corridors";
 import { fetchAttestations, REGISTRY_ID, REGISTRY_NETWORK } from "@/lib/registry";
 
 // Anchor facts are read from the chain at request time, not baked in at build.
@@ -14,6 +14,7 @@ export const revalidate = 3600;
 
 export default async function Home() {
   const attestations = await fetchAttestations();
+  const verifiedCount = corridors.filter((c) => liveness(c).state === "verified").length;
   return (
     <div className="flex flex-col gap-16">
       {/* Hero */}
@@ -115,7 +116,10 @@ export default async function Home() {
             <p className="text-secondary-text">
               The binding constraint is a live receiving anchor, not code. A corridor only shows{" "}
               <span className="font-medium">verified</span> once its endpoints have been confirmed
-              against the anchor&apos;s published <code>stellar.toml</code> — none have been yet.
+              against the anchor&apos;s published <code>stellar.toml</code> —{" "}
+              {verifiedCount === 0
+                ? "none have been yet."
+                : `${verifiedCount} of ${corridors.length} ${verifiedCount === 1 ? "has" : "have"} been.`}
             </p>
           </div>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-bg-subtle px-3 py-1 text-xs font-medium text-secondary-text">

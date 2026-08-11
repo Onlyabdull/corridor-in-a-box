@@ -4,6 +4,8 @@
 // handle, not exceptions that unwind the stack and lose the in-flight payment's
 // state.
 
+import { timingSafeEqual } from "node:crypto";
+
 export type Ok<T> = { readonly ok: true; readonly value: T };
 export type Err<E> = { readonly ok: false; readonly error: E };
 export type Outcome<T, E = CorridorError> = Ok<T> | Err<E>;
@@ -41,6 +43,23 @@ export const fail = (
   opts: { retryable?: boolean; cause?: unknown } = {},
 ): Err<CorridorError> =>
   err({ code, message, retryable: opts.retryable ?? false, cause: opts.cause });
+
+/**
+ * Compare two strings without leaking equality through early-exit timing —
+ * for credential comparisons (bearer tokens, API keys), where `a !== b` lets
+ * an attacker learn how many leading bytes matched from response latency.
+ *
+ * The length check runs first: a length mismatch only leaks the length, not
+ * the value, so short-circuiting there doesn't reintroduce the leak
+ * `timingSafeEqual` exists to close (it throws on unequal-length buffers
+ * rather than comparing them).
+ */
+export function constantTimeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 // --- Money ---------------------------------------------------------------
 // Amounts are strings on purpose. Never represent money as a JS number;

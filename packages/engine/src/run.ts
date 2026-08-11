@@ -275,6 +275,20 @@ export async function execute(
       });
     }
 
+    // Re-checked on every pass, not just once before the loop: quote() only
+    // validates expiresAt before this loop starts, but a retry (backed off
+    // between attempts) reuses the SAME q.value on every iteration. Without
+    // this, a slow anchor or a couple of retries can settle at a stale firm
+    // quote's price with no error. There's no "retry into a fresh quote"
+    // step in this loop, so once expired there's nothing safe to retry into.
+    if (q.value.firm && q.value.expiresAt <= now()) {
+      return finishFailure({
+        code: "QUOTE_EXPIRED",
+        message: `quote ${q.value.id} expired during retry`,
+        retryable: false,
+      });
+    }
+
     {
       const t = await advance("settling");
       if (!t.ok) return die(t.error);

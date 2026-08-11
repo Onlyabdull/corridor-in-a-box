@@ -67,6 +67,33 @@ export const corridors: Corridor[] = [
     recovery: { max_retries: 3, timeout_seconds: 900, rollback: "refund_sender" },
   },
   {
+    id: "ng-cowrie",
+    status_note:
+      "REAL — Cowrie Exchange (Lagos, Nigeria), issuer of NGNT. Confirmed 2026-08-11 by " +
+      "@corridor/probe against the anchor's live production API: SEP-10 challenge signed " +
+      "and exchanged for a JWT, SEP-12 answered, and SEP-31 GET /info returned a non-empty " +
+      "receive list (NGNT, USDC). No SEP-38 quote server is published, so pricing is " +
+      "off-protocol (quote_source=external) — this corridor cannot get a firm on-chain " +
+      "quote today. No payment has been attempted; a real settlement still needs a KYC'd " +
+      "business relationship with Cowrie, which this repo does not have.",
+    source: { name: "USD Sending Anchor", asset: "USDC", endpoints: { home_domain: "sending-anchor.example" } },
+    dest: {
+      name: "Cowrie Exchange (Nigeria)",
+      asset: "iso4217:NGN",
+      endpoints: {
+        home_domain: "cowrie.exchange",
+        transfer_server_sep31: "https://api.cowrie.exchange/sep31/direct",
+        web_auth: "https://api.cowrie.exchange/web_auth",
+        kyc_server: "https://api.cowrie.exchange/kyc",
+        endpoints_verified_at: "2026-08-11",
+      },
+    },
+    fx: { path: ["USD", "USDC", "NGN"], quote_source: "external", who_holds_risk: "receiving_anchor", quote_ttl_seconds: 60 },
+    compliance: { source_jurisdiction: "US", dest_jurisdiction: "NG" },
+    settlement: { bridge_asset: "USDC", network: "public", asset_issuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
+    recovery: { max_retries: 3, timeout_seconds: 900, rollback: "refund_sender" },
+  },
+  {
     id: "ng-cn",
     status_note: "PENDING — no compliant RMB SEP-31 off-ramp exists yet. dest endpoints unfilled.",
     source: { name: "Nigeria On-Ramp (cNGN/Cowrie-class)", asset: "USDC", endpoints: { home_domain: "example-ng-anchor.invalid" } },

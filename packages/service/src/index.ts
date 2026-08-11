@@ -14,6 +14,7 @@ import {
 import type { Corridor } from "@corridor/manifest";
 import { execute, type EngineDeps } from "@corridor/engine";
 import {
+  constantTimeEqual,
   isSettleableAmount,
   type CorridorErrorCode,
   type PaymentIntent,
@@ -192,7 +193,7 @@ export function createService(options: ServiceOptions): Service {
   // under `trustProxy`.
   const clientKey = (req: RouteRequest): string => {
     const key = bearer(req.headers);
-    if (key && options.apiKeys?.has(key)) return `key:${key}`;
+    if (key && matchesKey(options.apiKeys, key)) return `key:${key}`;
     return `ip:${req.clientIp ?? "anon"}`;
   };
 
@@ -228,7 +229,7 @@ export function createService(options: ServiceOptions): Service {
     // --- auth ---
     const presentedKey = bearer(headers);
     if (options.apiKeys) {
-      if (!presentedKey || !options.apiKeys.has(presentedKey)) {
+      if (!matchesKey(options.apiKeys, presentedKey)) {
         return { status: 401, body: { error: "unauthorized" } };
       }
     }
@@ -284,7 +285,7 @@ export function createService(options: ServiceOptions): Service {
       const run = store ? await store.get(key) : undefined;
       // 404 rather than 403 on an ownership mismatch: a 403 would confirm the
       // key exists, which is itself the enumeration oracle we are closing.
-      if (!run || (options.apiKeys && run.owner !== presentedKey)) {
+      if (!run || (options.apiKeys && !ownerMatches(run.owner, presentedKey))) {
         return { status: 404, body: { error: "not found" } };
       }
       return {
@@ -396,6 +397,25 @@ export function createService(options: ServiceOptions): Service {
 function bearer(headers: Record<string, string> | undefined): string | undefined {
   const auth = headers?.["authorization"];
   return auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
+}
+
+/** `Set.has()` short-circuits on hash-bucket lookup, which leaks timing
+ *  about the presented key. Iterate and compare every candidate in constant
+ *  time instead — the set of configured API keys is small (operator-sized,
+ *  not user-sized), so this stays cheap. */
+function matchesKey(keys: Set<string> | undefined, presented: string | undefined): boolean {
+  if (!keys || !presented) return false;
+  let matched = false;
+  for (const key of keys) {
+    if (constantTimeEqual(key, presented)) matched = true;
+  }
+  return matched;
+}
+
+/** Same constant-time treatment for the ownership check on GET /payments/:key. */
+function ownerMatches(owner: string | undefined, presented: string | undefined): boolean {
+  if (owner === undefined || presented === undefined) return false;
+  return constantTimeEqual(owner, presented);
 }
 
 /** `lastError` is stored as "CODE: message". Surface only the code — the message

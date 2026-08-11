@@ -59,11 +59,17 @@ system. Items marked ✅ are done.
 
 ## Phase 4 — Corridors
 
-- ⬜ Corridor #1 manifest for a live SEP-31 receive-side anchor.
-  `mx-example.corridor.yaml` exists but is a **template with fictional
-  endpoints** — it demonstrates the manifest shape, it does not describe a lane
-  that exists. This item closes when a real anchor's `stellar.toml` values are
-  in the file and `endpoints_verified_at` is set.
+- ✅ Corridor #1 manifest for a live SEP-31 receive-side anchor.
+  `ng-cowrie.corridor.yaml` — Cowrie Exchange (Lagos, Nigeria), confirmed
+  2026-08-11 by running `@corridor/probe` for real against its production API:
+  SEP-10 challenge signed and exchanged for a JWT, SEP-12 answered, SEP-31
+  `/info` returned a non-empty receive list (NGNT, USDC). `endpoints_verified_at`
+  is set and `corridor plan` reports it `VERIFIED`. `mx-example.corridor.yaml`
+  remains a fictional template for a *different* lane (Mexico) and is
+  unaffected. What this does NOT mean: no payment has been attempted, Cowrie
+  publishes no SEP-38 quote server (`quote_source: external`), and there is no
+  KYC'd business relationship with Cowrie backing this — see the manifest's
+  `status_note`.
 - ⬜ Additional real corridors as off-ramps come online.
 - ⬜ `ng-cn` becomes runnable the day a compliant RMB SEP-31 off-ramp exists.
 
