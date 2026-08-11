@@ -8,8 +8,9 @@ import {
   createMockSubmitter,
   execute,
   type EngineDeps,
+  type SettlementSubmitter,
 } from "@corridor/engine";
-import type { PaymentIntent } from "@corridor/types";
+import { fail, type PaymentIntent } from "@corridor/types";
 
 function corridor(): Corridor {
   const r = parseCorridor({
@@ -74,6 +75,46 @@ describe("engine.execute", () => {
     const r = await execute(intent(), corridor(), deps({ expireQuoteImmediately: true }));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe("QUOTE_EXPIRED");
+  });
+
+  it("does not settle against a quote that expired during a retry", async () => {
+    // The quote was VALID when execute() started (unlike the test above) —
+    // it expires only partway through the settle/retry loop, e.g. because a
+    // slow anchor or a couple of retries ran out the clock. Without a fresh
+    // expiry check inside the loop, the second settle attempt would submit
+    // at a stale, no-longer-honoured rate.
+    let clock = Date.now();
+    const now = () => clock;
+    // Stands in for a retry backoff that, combined with real-world latency,
+    // runs well past the quote's ~60s validity window.
+    const sleep = async (ms: number) => {
+      clock += ms + 65_000;
+    };
+
+    let submitCalls = 0;
+    const submitter: SettlementSubmitter = {
+      async submit() {
+        submitCalls++;
+        return fail("SETTLEMENT_FAILED", "simulated transient failure", { retryable: true });
+      },
+      async refund() {
+        return fail("SETTLEMENT_FAILED", "not reached", { retryable: false });
+      },
+    };
+
+    const r = await execute(intent(), corridor(), {
+      resolver: new StaticRouteResolver(() => createMockAdapter()),
+      submitter,
+      idempotency: new InMemoryIdempotencyStore(),
+      now,
+      sleep,
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("QUOTE_EXPIRED");
+    // Exactly one settle attempt: the retry loop's fresh expiry check catches
+    // the stale quote before ever calling submit() a second time.
+    expect(submitCalls).toBe(1);
   });
 
   it("fails closed when KYC is rejected", async () => {
@@ -242,9 +283,23 @@ describe("state machine", () => {
     expect(canTransition("completed", "settling")).toBe(false);
   });
 
-  it("allows recovery to loop back into settling", () => {
-    expect(canTransition("settling", "recovering")).toBe(true);
-    expect(canTransition("recovering", "settling")).toBe(true);
+  it("routes the settle retry loop through `retrying`, not `recovering`", () => {
+    // These were one state, and this test used to assert
+    // `canTransition("recovering", "settling") === true` — which, combined with
+    // `settled -> recovering`, made `settled -> recovering -> settling` a legal
+    // path: a re-submission of a payment that had already gone out. A property
+    // test walking the graph found it. The two kinds of recovery are now
+    // distinct so the double-spend is unreachable by construction.
+    expect(canTransition("settling", "retrying")).toBe(true);
+    expect(canTransition("retrying", "settling")).toBe(true);
+
+    // `recovering` is terminal-bound and cannot get back to the chain.
+    expect(canTransition("recovering", "settling")).toBe(false);
     expect(canTransition("recovering", "refunded")).toBe(true);
+    expect(canTransition("recovering", "held")).toBe(true);
+
+    // And the path that motivated the split stays closed.
+    expect(canTransition("settled", "settling")).toBe(false);
+    expect(canTransition("settled", "recovering")).toBe(true);
   });
 });

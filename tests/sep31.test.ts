@@ -77,7 +77,11 @@ const intent: PaymentIntent = {
   idempotencyKey: "k",
   corridorId: "test",
   sender: { id: "s" },
-  recipient: { id: "recipient-acct" },
+  // sep12Id is the customer id the RECEIVING anchor issued at registration. It
+  // is what SEP-12 status is looked up by and what SEP-31 open sends as
+  // receiver_id; without it the adapter fails closed rather than checking the
+  // operator's own account (see tests/security.test.ts).
+  recipient: { id: "recipient-acct", sep12Id: "anchor-cust-1" },
   sourceAmount: { asset: "USDC", amount: "100" },
 };
 
