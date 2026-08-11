@@ -99,7 +99,9 @@ const TOML_ENDPOINTS: ReadonlyArray<{ key: string; sep: SepNumber }> = [
  */
 export function tomlValue(toml: string, key: string): string | undefined {
   const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const m = toml.match(new RegExp(`^[ \\t]*${escaped}[ \\t]*=[ \\t]*(?:"([^"]*)"|'([^']*)')`, "m"));
+  const m = toml.match(
+    new RegExp(`^[ \\t]*${escaped}[ \\t]*=[ \\t]*(?:"([^"]*)"|'([^']*)')`, "m"),
+  );
   const value = (m?.[1] ?? m?.[2])?.trim();
   return value ? value : undefined;
 }

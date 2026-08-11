@@ -65,7 +65,7 @@ system. Items marked ✅ are done.
   SEP-10 challenge signed and exchanged for a JWT, SEP-12 answered, SEP-31
   `/info` returned a non-empty receive list (NGNT, USDC). `endpoints_verified_at`
   is set and `corridor plan` reports it `VERIFIED`. `mx-example.corridor.yaml`
-  remains a fictional template for a *different* lane (Mexico) and is
+  remains a fictional template for a _different_ lane (Mexico) and is
   unaffected. What this does NOT mean: no payment has been attempted, Cowrie
   publishes no SEP-38 quote server (`quote_source: external`), and there is no
   KYC'd business relationship with Cowrie backing this — see the manifest's

@@ -163,9 +163,9 @@ describe("tomlValue", () => {
   });
 
   it("reads a single-quoted value — valid TOML that real anchors use (e.g. cowrie.exchange)", () => {
-    expect(tomlValue("WEB_AUTH_ENDPOINT = 'https://a.example/auth'", "WEB_AUTH_ENDPOINT")).toBe(
-      "https://a.example/auth",
-    );
+    expect(
+      tomlValue("WEB_AUTH_ENDPOINT = 'https://a.example/auth'", "WEB_AUTH_ENDPOINT"),
+    ).toBe("https://a.example/auth");
   });
 
   it("treats an empty single-quoted value as absent too", () => {
