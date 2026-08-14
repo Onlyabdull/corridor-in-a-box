@@ -63,11 +63,23 @@ function adapterFor(c: Corridor): Sep31Adapter {
   return new Sep31Adapter(c, { sep10 });
 }
 
+// A SEP-12 customer id issued by THIS anchor for the receiver. There is no way
+// to obtain one read-only — it comes back from `PUT /customer`, a write, and
+// this suite deliberately performs none. So it has to be supplied, and when it
+// is absent the compliance probe is not run rather than counted as a failure:
+// `ensureCompliance` correctly refuses to settle on a recipient it cannot
+// identify, and asserting that a fail-closed control fails closed proves
+// nothing about the anchor's conformance.
+const recipientSep12Id = env.ANCHOR_RECIPIENT_SEP12_ID || undefined;
+
 const intent: PaymentIntent = {
   idempotencyKey: `integration-${Date.now()}`,
   corridorId: "integration-live",
   sender: { id: "integration-sender" },
-  recipient: { id: env.ANCHOR_RECIPIENT_ID || "integration-recipient" },
+  recipient: {
+    id: env.ANCHOR_RECIPIENT_ID || "integration-recipient",
+    ...(recipientSep12Id ? { sep12Id: recipientSep12Id } : {}),
+  },
   sourceAmount: { asset: "USDC", amount: env.ANCHOR_AMOUNT || "10" },
 };
 
@@ -85,11 +97,14 @@ describe.skipIf(!hasAnchor)("SEP-31 live anchor (read-only)", () => {
 
   it.skipIf(!hasSigner)("passes the adapter conformance probes", async () => {
     const c = liveCorridor();
+    // Matched on the probe's own name because conformanceSuite() returns a
+    // fixed list and exposes no other handle on it. If that list grows, this
+    // filter is the thing to revisit.
+    const suite = conformanceSuite(adapterFor(c), intent, c).filter(
+      (p) => recipientSep12Id || p.name !== "compliance resolves to a known status",
+    );
     const results = await Promise.all(
-      conformanceSuite(adapterFor(c), intent, c).map(async (p) => ({
-        name: p.name,
-        pass: await p.run(),
-      })),
+      suite.map(async (p) => ({ name: p.name, pass: await p.run() })),
     );
     for (const r of results) {
       expect(r.pass, `probe failed: ${r.name}`).toBe(true);
