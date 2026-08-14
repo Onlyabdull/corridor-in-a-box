@@ -27,6 +27,12 @@ const env = process.env;
 const transferServer = env.ANCHOR_SEP31_TRANSFER_SERVER;
 const homeDomain = env.ANCHOR_HOME_DOMAIN;
 const hasAnchor = Boolean(transferServer && homeDomain);
+// Separate gate from hasAnchor, deliberately. Every assertion below goes
+// through SEP-38 or SEP-12, and a real anchor answers both with 403 unless the
+// request carries a SEP-10 JWT — so without a signer these do not test the
+// adapter, they test that an anchor rejects anonymous callers. `||` not `??`:
+// CI passes an unset secret through as an empty string.
+const hasSigner = Boolean(env.CORRIDOR_SIGNER_SECRET || "");
 
 function liveCorridor(): Corridor {
   const endpoints: Record<string, string> = {
@@ -66,7 +72,7 @@ const intent: PaymentIntent = {
 };
 
 describe.skipIf(!hasAnchor)("SEP-31 live anchor (read-only)", () => {
-  it("returns a firm quote with a future expiry", async () => {
+  it.skipIf(!hasSigner)("returns a firm quote with a future expiry", async () => {
     const c = liveCorridor();
     if (!c.dest.endpoints.quote_server) {
       // No SEP-38 server configured for this anchor — nothing to assert here.
@@ -77,7 +83,7 @@ describe.skipIf(!hasAnchor)("SEP-31 live anchor (read-only)", () => {
     if (q.ok) expect(q.value.expiresAt).toBeGreaterThan(Date.now());
   });
 
-  it("passes the adapter conformance probes", async () => {
+  it.skipIf(!hasSigner)("passes the adapter conformance probes", async () => {
     const c = liveCorridor();
     const results = await Promise.all(
       conformanceSuite(adapterFor(c), intent, c).map(async (p) => ({
@@ -93,8 +99,18 @@ describe.skipIf(!hasAnchor)("SEP-31 live anchor (read-only)", () => {
 
 // A tiny always-present assertion so the file is never an empty suite when the
 // anchor vars are unset (keeps the default test run green and explicit).
+//
+// Skipping is only honest because something says so out loud: the two gates
+// below are each mirrored by a step in nightly-live-anchor.yml that annotates
+// the run when the corresponding value is missing. A silent skip would be the
+// "check that cannot fail" this repo keeps arguing against — it was one, for
+// months, and the fix is the warning, not the removal of the gate.
 describe("SEP-31 live anchor (gating)", () => {
   it("is skipped unless ANCHOR_SEP31_TRANSFER_SERVER + ANCHOR_HOME_DOMAIN are set", () => {
     expect(typeof hasAnchor).toBe("boolean");
+  });
+
+  it("skips the auth-dependent cases unless CORRIDOR_SIGNER_SECRET is set", () => {
+    expect(typeof hasSigner).toBe("boolean");
   });
 });
