@@ -256,12 +256,16 @@ CONFLICT DO NOTHING` in Postgres) implemented by both stores, plus regression
   `ANCHOR_*` env vars to public SDF testanchor values when the matching
   secrets are unset, so its live-anchor assertions actually run in CI
   instead of skipping.
-- The web dashboard's "Attested anchors" panel now reads the live on-chain
-  registry on every request (`web/lib/registry.ts`, via a Soroban
-  simulation call — no signing key, no fee) instead of showing only the
-  static corridor list. The Corridors section, which is still the static
-  manifest, is now explicitly labeled "manifest snapshot — not a live
-  liveness probe" so the two are never confused.
+- The web dashboard's "Attested anchors" panel now reads the on-chain
+  registry (`web/lib/registry.ts`, via a Soroban simulation call — no
+  signing key, no fee) instead of showing only the static corridor list.
+  The page is incrementally re-rendered on an hourly `revalidate`, so what
+  you see is real chain data up to an hour old — **not** a read per request,
+  as this entry previously claimed. Each card still reports its own
+  attestation age in ledgers, which is the number that actually matters.
+  The Corridors section, which is still the static manifest, is explicitly
+  labeled "manifest snapshot — not a live liveness probe" so the two are
+  never confused.
 - `@corridor/router` gained a registry-gated `RouteResolver`
   (`RegistryRouteResolver`): fails closed on an unreachable registry,
   refuses unattested domains, and enforces a max-staleness bound. Opt-in

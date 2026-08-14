@@ -48,9 +48,15 @@ jobs:
       # Probe first and always. This half needs no credentials, so it verifies
       # the probe logic against live anchors on every run regardless of whether
       # the registry can be written to.
+      # DOMAINS goes through `env`, never interpolated into the script body.
+      # `${{ inputs.domains }}` inline in a `run:` block is a shell injection:
+      # this job carries ATTESTER_SECRET, so anyone able to dispatch it could
+      # run arbitrary commands with the registry signing key in scope.
       - name: Probe anchors
+        env:
+          DOMAINS: ${{ inputs.domains }}
         run: |
-          domains="${{ inputs.domains }}"
+          domains="$DOMAINS"
           if [ -z "$domains" ]; then
             domains=$(node -p "require('./contracts/anchors.json').domains.join(' ')")
           fi
@@ -61,10 +67,27 @@ jobs:
 
       - name: Submit attestations
         if: ${{ env.ATTESTER_SECRET != '' }}
-        run: pnpm attest ${{ inputs.domains }}
+        env:
+          DOMAINS: ${{ inputs.domains }}
+        run: pnpm attest $DOMAINS
+
+      # Unset secret on a MANUAL run is a fair state — someone is exercising the
+      # probe path on purpose. Unset on the SCHEDULE is not: the only reason
+      # this job runs nightly is to keep the on-chain registry fresh, so a
+      # scheduled run that writes nothing and reports success is precisely the
+      # "check that cannot fail" this workflow was written to replace. The
+      # registry silently went a week stale behind a green cron before this
+      # step told the truth about it.
+      - name: Fail a scheduled run that cannot write
+        if: ${{ env.ATTESTER_SECRET == '' && github.event_name == 'schedule' }}
+        run: |
+          echo "::error::ATTESTER_SECRET is not set, so this scheduled run probed" \
+               "the anchors but wrote nothing on chain. The registry is going" \
+               "stale. Set the secret to an enrolled attester key."
+          exit 1
 
       - name: Note when attestation is not configured
-        if: ${{ env.ATTESTER_SECRET == '' }}
+        if: ${{ env.ATTESTER_SECRET == '' && github.event_name != 'schedule' }}
         run: |
           echo "::warning::ATTESTER_SECRET is not set — probes ran but nothing was" \
                "written on chain. Set the secret to an enrolled attester key to" \

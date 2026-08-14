@@ -13,7 +13,13 @@
     "cowrie.exchange is a real production anchor (Cowrie Exchange, Lagos, Nigeria;",
     "see corridors/ng-cowrie.corridor.yaml). Confirmed 2026-08-11 by running the",
     "probe against it directly: SEP-10 auth and SEP-31 (receives NGNT, USDC) both",
-    "pass; no SEP-38 quote server is published."
+    "pass; no SEP-38 quote server is published.",
+    "",
+    "stellar.org and lobstr.co were probed by hand during development and already",
+    "hold records in the registry. They are listed here because a record nobody",
+    "refreshes decays into a stale row the scheduled job will never touch — the",
+    "registry's whole claim is that staleness is visible AND fixable, so every",
+    "domain it holds belongs in this list."
   ],
-  "domains": ["testanchor.stellar.org", "cowrie.exchange"]
+  "domains": ["testanchor.stellar.org", "cowrie.exchange", "stellar.org", "lobstr.co"]
 }
