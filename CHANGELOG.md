@@ -7,6 +7,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
 
 ## [Unreleased]
 
+### Added — SEP-31 refund initiation fails closed with `REFUND_UNSUPPORTED` (2026-08-29)
+
+SEP-31 defines no sender-initiated refund endpoint: a refund is a decision the
+receiving anchor makes on its own side, only reported back through the
+transaction record's `refunds` object. So `Sep31Adapter.requestRefund()` is
+now an explicit, documented fail-closed — it returns the new non-retryable
+`REFUND_UNSUPPORTED` error code without touching the network, and the message
+points at the out-of-band runbook path instead. Anything else would be a
+bespoke, anchor-specific endpoint dressed up as protocol conformance; anchors
+that do expose a proprietary refund API belong behind their own
+`AnchorAdapter` implementation, not in `packages/sep31`. Nothing calls the
+method yet (whether refund initiation belongs on the `AnchorAdapter` port is
+a separate design decision); it exists to occupy the name with the refusal.
+The engine's escalation of a refused refund to `held` is asserted at the
+engine seam, the service maps the code to HTTP 501, the on-chain submitter's
+refusal message now points at the out-of-band runbook instead of a "SEP-31
+anchor refund" flow that does not exist, and `docs/sep-coverage.md` states
+the scope boundary plainly.
+
 ### Added — `refund_pending` state for anchor-driven refunds (2026-08-29)
 
 The corridor state machine gains `refund_pending`: "we asked the receiving
