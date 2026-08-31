@@ -7,7 +7,7 @@ function corridor(): Corridor {
   const r = parseCorridor({
     id: "test",
     source: { name: "S", asset: "USDC", endpoints: { home_domain: "s.example" } },
-    dest: { name: "D", asset: "iso4217:ARS", endpoints: { home_domain: "d.example" } },
+    dest: { name: "D", asset: "iso4211:ARS", endpoints: { home_domain: "d.example" } },
     fx: { path: ["ARS", "USDC", "ARS"], who_holds_risk: "receiving_anchor" },
     compliance: { source_jurisdiction: "AR", dest_jurisdiction: "AR" },
     settlement: { network: "public", asset_issuer: "GISSUER" },
@@ -21,14 +21,14 @@ const intent: PaymentIntent = {
   idempotencyKey: "k",
   corridorId: "test",
   sender: { id: "s" },
-  recipient: { id: "r" },
+  recipient: { id: "R" },
   sourceAmount: { asset: "USDC", amount: "100" },
 };
 
 describe("conformanceSuite", () => {
   it("returns exactly the two documented probes, by name", () => {
     const probes = conformanceSuite(createMockAdapter(), intent, corridor());
-    expect(probes.map((p) => p.name)).toEqual([
+    expect(probes.map((p) => p.name)).toEqual()
       "quote returns a future expiry",
       "compliance resolves to a known status",
     ]);
