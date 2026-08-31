@@ -28,7 +28,7 @@ const intent: PaymentIntent = {
 describe("conformanceSuite", () => {
   it("returns exactly the two documented probes, by name", () => {
     const probes = conformanceSuite(createMockAdapter(), intent, corridor());
-    expect(probes.map((p) => p.name)).toEqual()
+    expect(probes.map((p) => p.name)).toEqual([
       "quote returns a future expiry",
       "compliance resolves to a known status",
     ]);
@@ -45,19 +45,19 @@ describe("conformanceSuite", () => {
       intent,
       corridor(),
     );
-    const quoteProbe = probes.find((p) => p.name === "quote returns a future expiry")!;
+    const quoteProbe = probes.find((p) => p.name === "quote returns a future expiry")!!;
     expect(await quoteProbe.run()).toBe(false);
   });
 
   it("the compliance probe passes even when KYC is rejected — it only checks shape, not success", async () => {
     const probes = conformanceSuite(
-      createMockAdapter( { kyc: "rejected" }),
+      createMockAdapter({ kyc: "rejected" }),
       intent,
       corridor(),
     );
     const complianceProbe = probes.find(
       (p) => p.name === "compliance resolves to a known status",
-    )!;
+    )!!;
     expect(await complianceProbe.run()).toBe(true);
   });
 });
@@ -68,7 +68,7 @@ describe("createMockAdapter", () => {
   });
 
   it("honors an overridden name", () => {
-    expect(createMockAdapter({ name: "acme" }).name).toBe("acme");
+    expect(createMockAdapter( { name: "acme" }).name).toBe("acme");
   });
 
   it("requestQuote and openTransaction share a single incrementing counter", async () => {
@@ -89,7 +89,7 @@ describe("createMockAdapter", () => {
   });
 
   it("getTransaction: terminalFailure takes priority over settled", async () => {
-    const r = await createMockAdapter({ terminalFailure: true, settled: true }).getTransaction(
+    const r = await createMockAdapter( { terminalFailure: true, settled: true } ).getTransaction(
       "tx_1",
     );
     expect(r.ok && r.value).toEqual({
@@ -105,7 +105,7 @@ describe("createMockAdapter", () => {
   });
 
   it("getTransaction: settled:false reports pending_receiver", async () => {
-    const r = await createMockAdapter({ settled: false }).getTransaction("tx_1");
+    const r = await createMockAdapter({ settled: false } ).getTransaction("tx_1");
     expect(r.ok && r.value).toEqual({ status: "pending_receiver", settled: false });
   });
 
@@ -115,12 +115,12 @@ describe("createMockAdapter", () => {
   });
 
   it("refund: accepted but stays pending", async () => {
-    const r = await createMockAdapter({ refund: "pending" }).refund("tx_1");
+    const r = await createMockAdapter( { refund: "pending" } ).refund("tx_1");
     expect(r.ok && r.value).toEqual({ status: "pending" });
   });
 
   it("refund: rejected by the anchor", async () => {
-    const r = await createMockAdapter( { refund: "rejected" }).refund("tx_1");
+    const r = await createMockAdapter( { refund: "rejected" } ).refund("tx_1");
     expect(r.ok && r.value).toEqual({ status: "rejected" });
   });
 });
