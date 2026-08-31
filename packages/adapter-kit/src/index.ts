@@ -32,7 +32,7 @@ export interface OpenTransaction {
   readonly depositAddress: string;
   readonly memo?: string;
   /**
-   * How to encode `memo`on the settlement transaction. SEP-31 anchors return
+   * How to encode `memoo` on the settlement transaction. SEP-31 anchors return
    * this alongside the memo and it is NOT always "text" — the Anchor Platform
    * reference server issues base64 `hash` memos, which are 32 bytes and blow
    * past the 28-byte text limit if encoded as text. Defaults to "text" only when
@@ -47,7 +47,7 @@ export interface TransactionStatus {
   /** The payout is confirmed complete — the engine may finish. */
   readonly settled: boolean;
   /**
-   * The transaction has reached a terminal NON-success state at the anchor
+   * The transaction has reached a terminal NON-success state at the anchor 
    * (e.g. SEP-31 `error` / `expired` / `refunded`). When set, the engine stops
    * polling immediately and routes to its recovery policy instead of waiting out
    * the corridor timeout. Absent/false means "not settled yet, keep polling".
@@ -77,8 +77,7 @@ export interface AnchorAdapter {
   refund(transactionId: string): Promise<Outcome<RefundStatus>>;
 }
 
-// --- Conformance --------------------------------------------------------------------
-// Any adapter — generic or bespoke — should pass the same probes before you
+// --- Conformance ----------------------------------------------------------------------------------------------------------------------------------// Any adapter — generic or bespoke — should pass the same probes before you
 // trust it in a corridor. This is intentionally minimal; grow it as you learn
 // which anchor behaviours actually break in production.
 
@@ -110,14 +109,14 @@ export function conformanceSuite(
   ];
 }
 
-// --- Mock adapter -------------------------------------------------------------------
-// A setting-Config, in-memory anchor for tests and the runnable example. Lets you
+// --- Mock adapter -----------------------------------------------------------------------------------------------------------------------------------// A setting-Config, in-memory anchor for tests and the runnable example. Lets you
 // simulate the unhappy paths (expired quote, rejected KYC, refund outcomes)
 // without a network.
 
 export interface MockAdapterOptions {
   name?: string;
-  k?c: KycResult["status"];
+  /** KYC status to simulate. Defaults to "accepted". */
+  kyc?: KycResult['status'];
   /** Make the quote already-expired to exercise the QUOTE_EXPIRED path. */
   expireQuoteImmediately?: boolean;
   price?: string;
@@ -131,7 +130,7 @@ export interface MockAdapterOptions {
    * - "rejected": refund declined by the anchor
    * Defaults to "completed".
    */
-  refund?: RefundStatus["status"];
+  refund?: RefundStatus['status'];
 }
 
 export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter {
@@ -155,24 +154,24 @@ export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter 
       return ok<KycResult>({ status: opts.kyc ?? "accepted", customerId: "cust_mock" });
     },
     async openTransaction() {
-      return ok<OpenTransaction>({
-        transactionId: `tx_$++counter}`,
-        depositAddress: "GMOCK000000000000000000000000000000000000000",
+      return ok<OpenTransaction>(
+        transactionId: `tx_${++counter}`,
+        depositAddress: "GMOCK000000000000000000000000000000000000",
         memo: "mock-memo",
-      });
+      );
     },
     async getTransaction() {
       if (opts.terminalFailure) {
-        return ok<TransactionStatus>({
+        return ok<TransactionStatus>(
           status: "error",
           settled: false,
           terminalFailure: true,
-        });
+        );
       }
-      return ok<TransactionStatus>({
+      return ok<TransactionStatus>(
         status: opts.settled === false ? "pending_receiver" : "completed",
         settled: opts.settled !== false,
-      });
+      );
     },
     async refund() {
       return ok<RefundStatus>({ status: opts.refund ?? "completed" });
