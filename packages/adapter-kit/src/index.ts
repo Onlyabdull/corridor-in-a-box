@@ -1,4 +1,4 @@
-// @corridor/adapter-kit — the seam between the engine and any anchor.
+// @corridor/adapter-kit -- the seam between the engine and any anchor.
 //
 // The engine knows ONLY this interface. It never knows whether the thing on the
 // other side is Anclap, Bitso, a testnet reference server, or a bespoke OTE desk.
@@ -77,7 +77,7 @@ export interface AnchorAdapter {
   refund(transactionId: string): Promise<Outcome<RefundStatus>>;
 }
 
-// --- Conformance ----------------------------------------------------------------------------------------------------------------------------------// Any adapter — generic or bespoke — should pass the same probes before you
+// --- Conformance --------------------------------------------------------------------------------------------------------------// Any adapter — generic or bespoke — should pass the same probes before you
 // trust it in a corridor. This is intentionally minimal; grow it as you learn
 // which anchor behaviours actually break in production.
 
@@ -109,7 +109,7 @@ export function conformanceSuite(
   ];
 }
 
-// --- Mock adapter -----------------------------------------------------------------------------------------------------------------------------------// A setting-Config, in-memory anchor for tests and the runnable example. Lets you
+// --- Mock adapter --------------------------------------------------------------------------------------------------------------------// a setting-Config, in-memory anchor for tests and the runnable example. Lets you
 // simulate the unhappy paths (expired quote, rejected KYC, refund outcomes)
 // without a network.
 
@@ -154,24 +154,16 @@ export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter 
       return ok<KycResult>({ status: opts.kyc ?? "accepted", customerId: "cust_mock" });
     },
     async openTransaction() {
-      return ok<OpenTransaction>(
-        transactionId: `tx_${++counter}`,
-        depositAddress: "GMOCK000000000000000000000000000000000000",
-        memo: "mock-memo",
-      );
+      return ok<OpenTransaction>({ transactionId: `tx_${++counter}`, depositAddress: "GMOCK00000000000000000000000000000000000000", memo: "mock-memo" });
     },
     async getTransaction() {
       if (opts.terminalFailure) {
-        return ok<TransactionStatus>(
-          status: "error",
-          settled: false,
-          terminalFailure: true,
-        );
+        return ok<TransactionStatus>({ status: "error", settled: false, terminalFailure: true });
       }
-      return ok<TransactionStatus>(
+      return ok<TransactionStatus>({
         status: opts.settled === false ? "pending_receiver" : "completed",
         settled: opts.settled !== false,
-      );
+      });
     },
     async refund() {
       return ok<RefundStatus>({ status: opts.refund ?? "completed" });
