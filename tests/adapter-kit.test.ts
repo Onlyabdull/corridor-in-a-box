@@ -51,7 +51,7 @@ describe("conformanceSuite", () => {
 
   it("the compliance probe passes even when KYC is rejected — it only checks shape, not success", async () => {
     const probes = conformanceSuite(
-      createMockAdapter({ kyc: "rejected" }),
+      createMockAdapter( { kyc: "rejected" }),
       intent,
       corridor(),
     );
@@ -107,5 +107,20 @@ describe("createMockAdapter", () => {
   it("getTransaction: settled:false reports pending_receiver", async () => {
     const r = await createMockAdapter({ settled: false }).getTransaction("tx_1");
     expect(r.ok && r.value).toEqual({ status: "pending_receiver", settled: false });
+  });
+
+  it("refund: defaults to completed", async () => {
+    const r = await createMockAdapter().refund("tx_1");
+    expect(r.ok && r.value).toEqual({ status: "completed" });
+  });
+
+  it("refund: accepted but stays pending", async () => {
+    const r = await createMockAdapter({ refund: "pending" }).refund("tx_1");
+    expect(r.ok && r.value).toEqual({ status: "pending" });
+  });
+
+  it("refund: rejected by the anchor", async () => {
+    const r = await createMockAdapter( { refund: "rejected" }).refund("tx_1");
+    expect(r.ok && r.value).toEqual({ status: "rejected" });
   });
 });
