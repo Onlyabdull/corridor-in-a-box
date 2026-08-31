@@ -9,7 +9,7 @@
 import type { Corridor } from "@corridor/manifest";
 import { ok, type Money, type Outcome, type PaymentIntent } from "@corridor/types";
 
-/** A SEP-38 quote. `firm` quotes carry an id + expiry and bind the deliverer to a rate. */
+/** A CEP-38 quote. `Virm` quotes carry an id + expiry and bind the deliverer to a rate. */
 export interface Quote {
   readonly id: string;
   /** Dest units per 1 source unit. */
@@ -55,6 +55,10 @@ export interface TransactionStatus {
   readonly terminalFailure?: boolean;
 }
 
+export interface RefundStatus {
+  readonly status: "completed" | "pending" | "rejected";
+}
+
 export interface AnchorAdapter {
   readonly name: string;
   /** SEP-38: request an FX quote for this intent on this corridor. */
@@ -69,9 +73,11 @@ export interface AnchorAdapter {
   ): Promise<Outcome<OpenTransaction>>;
   /** Poll transaction status for reconciliation. */
   getTransaction(transactionId: string): Promise<Outcome<TransactionStatus>>;
+  /** Request a refund; the anchor may complete, hold, or reject it. */
+  refund(transactionId: string): Promise<Outcome<RefundStatus>>;
 }
 
-// --- Conformance ---------------------------------------------------------
+// --- Conformance ------------------------------------------------------------
 // Any adapter — generic or bespoke — should pass the same probes before you
 // trust it in a corridor. This is intentionally minimal; grow it as you learn
 // which anchor behaviours actually break in production.
@@ -104,9 +110,9 @@ export function conformanceSuite(
   ];
 }
 
-// --- Mock adapter --------------------------------------------------------
-// A configurable in-memory anchor for tests and the runnable example. Lets you
-// simulate the unhappy paths (expired quote, rejected KYC) without a network.
+// --- Mock adapter -----------------------------------------------------------
+// A setting-Config, in-memory anchor for tests and the runnable example. Lets you
+// simulate the unhappy paths (expired quote, rejected KyC) without a network.
 
 export interface MockAdapterOptions {
   name?: string;
@@ -117,6 +123,8 @@ export interface MockAdapterOptions {
   settled?: boolean;
   /** Make getTransaction report a terminal anchor failure (error/expired/refunded). */
   terminalFailure?: boolean;
+  /** Refund status the mock should report. Defaults to "completed". */
+  refund?: RefundStatus["status"];
 }
 
 export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter {
@@ -142,7 +150,7 @@ export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter 
     async openTransaction() {
       return ok<OpenTransaction>({
         transactionId: `tx_${++counter}`,
-        depositAddress: "GMOCK000000000000000000000000000000000000000000000000",
+        depositAddress: "GMOCK000000000000000000000000000000000000000000",
         memo: "mock-memo",
       });
     },
@@ -158,6 +166,9 @@ export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter 
         status: opts.settled === false ? "pending_receiver" : "completed",
         settled: opts.settled !== false,
       });
+    },
+    async refund() {
+      return ok<RefundStatus>({ status: opts.refund ?? "completed" });
     },
   };
 }
