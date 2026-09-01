@@ -100,6 +100,15 @@ export interface TransactionStatus {
    */
   readonly terminalFailure?: boolean;
   /**
+   * In flight, but blocked on input from outside the engine rather than on the
+   * anchor doing its work (SEP-31 `incomplete`, `pending_customer_info_update`,
+   * `pending_transaction_info_update`). Polling continues either way — the
+   * distinction is operational: a run that times out here timed out waiting on
+   * a human, not on a slow anchor. Optional and purely informational; absent
+   * means "not known to be blocked".
+   */
+  readonly awaitingInput?: boolean;
+  /**
    * Refund detail, when the anchor reported any.
    *
    * Carried on the status rather than fetched separately because it arrives on
