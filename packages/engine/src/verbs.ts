@@ -118,6 +118,7 @@ export async function reconcileUntil(
   transactionId: string,
   opts: PollOptions,
 ): Promise<Outcome<TransactionStatus>> {
+  let firstStatus: string | undefined;
   let lastStatus = "unknown";
   let poll = 0;
   const startedAt = opts.now();
@@ -140,6 +141,14 @@ export async function reconcileUntil(
       status: rawStatus,
     });
 
+    // Recorded before the settled/terminal returns so `firstStatus` sees the
+    // very first thing the anchor said, which is what makes an identical
+    // first/last pair readable as a stalled observer.
+    if (s.ok) {
+      if (firstStatus === undefined) firstStatus = s.value.status;
+      lastStatus = s.value.status;
+      lastAwaitingInput = s.value.awaitingInput === true;
+    }
     if (s.ok && s.value.settled) return s;
     // A terminal non-success at the anchor (error/expired/refunded): stop polling
     // now and let the engine recover, rather than waiting out the timeout. Non-
@@ -151,10 +160,6 @@ export async function reconcileUntil(
         { retryable: false },
       );
     }
-    if (s.ok) {
-      lastStatus = s.value.status;
-      lastAwaitingInput = s.value.awaitingInput === true;
-    }
     if (opts.now() >= opts.deadlineMs) {
       // On a transient anchor error, surface it; otherwise it's a settle timeout.
       if (!s.ok) return s;
@@ -164,7 +169,7 @@ export async function reconcileUntil(
       const blocked = lastAwaitingInput ? ", awaiting input from another party" : "";
       return fail(
         "SETTLEMENT_TIMEOUT",
-        `tx ${transactionId} did not settle before timeout (last status=${lastStatus}${blocked})`,
+        `tx ${transactionId} did not settle before timeout (polls=${poll}, elapsed=${elapsedMs}ms, first status=${firstStatus ?? "unknown"}, last status=${lastStatus}${blocked})`,
         { retryable: false },
       );
     }
