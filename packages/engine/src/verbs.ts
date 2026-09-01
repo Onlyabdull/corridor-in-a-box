@@ -102,6 +102,19 @@ export interface PollOptions {
   deadlineMs: number;
   /** Delay between polls. */
   pollMs: number;
+  /**
+   * Number of consecutive polls returning the same status before we conclude
+   * the anchor is stuck rather than legitimately slow. Once crossed,
+   * `reconcileUntil` returns a non-retryable `RECONCILE_STALLED` carrying the
+   * stuck status and the consecutive count.
+   *
+   * Set to `0` or `undefined` to disable stall detection (legacy behaviour).
+   *
+   * **Default:** `10`. With a typical `pollMs` of 2 s that is ≈ 20 s — well
+   * below the corridor timeout but long enough that a legitimately slow anchor
+   * transitioning through intermediate states won't be misdiagnosed.
+   */
+  stallThreshold?: number;
   /** Corridor ID for metric tagging. Optional. */
   corridorId?: string;
   /** Logger for per-poll debug logs. Optional. */
@@ -113,6 +126,11 @@ export interface PollOptions {
 // 4'. RECONCILE (production) — poll the anchor until the payout settles or the
 //     corridor's timeout elapses. Returns a NON-retryable error on timeout so the
 //     engine routes straight to refund/hold instead of re-sending the payment.
+//
+//     Stall detection: when `stallThreshold` is set and the anchor returns the
+//     same status for that many consecutive polls, we bail early with
+//     `RECONCILE_STALLED` — the anchor is stuck, not slow. This lets the engine
+//     recover (refund/hold) long before the corridor deadline expires.
 export async function reconcileUntil(
   adapter: AnchorAdapter,
   transactionId: string,
@@ -120,6 +138,8 @@ export async function reconcileUntil(
 ): Promise<Outcome<TransactionStatus>> {
   let firstStatus: string | undefined;
   let lastStatus = "unknown";
+  let sameCount = 0;
+  const threshold = opts.stallThreshold ?? 0;
   let poll = 0;
   const startedAt = opts.now();
   let lastAwaitingInput = false;
@@ -146,6 +166,9 @@ export async function reconcileUntil(
     // first/last pair readable as a stalled observer.
     if (s.ok) {
       if (firstStatus === undefined) firstStatus = s.value.status;
+      // A status identical to the previous poll's is what a stuck observer
+      // looks like; any change resets the run of sameness.
+      sameCount = s.value.status === lastStatus ? sameCount + 1 : 0;
       lastStatus = s.value.status;
       lastAwaitingInput = s.value.awaitingInput === true;
     }
@@ -157,6 +180,13 @@ export async function reconcileUntil(
       return fail(
         "RECONCILE_MISMATCH",
         `tx ${transactionId} terminally failed at anchor (status=${s.value.status})`,
+        { retryable: false },
+      );
+    }
+    if (threshold > 0 && sameCount >= threshold) {
+      return fail(
+        "RECONCILE_STALLED",
+        `tx ${transactionId} stuck at status=${lastStatus} for ${sameCount} consecutive polls`,
         { retryable: false },
       );
     }
