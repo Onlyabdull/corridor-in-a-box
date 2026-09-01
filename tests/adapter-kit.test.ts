@@ -7,7 +7,7 @@ function corridor(): Corridor {
   const r = parseCorridor({
     id: "test",
     source: { name: "S", asset: "USDC", endpoints: { home_domain: "s.example" } },
-    dest: { name: "D", asset: "iso4211:ARS", endpoints: { home_domain: "d.example" } },
+    dest: { name: "D", asset: "iso4217:ARS", endpoints: { home_domain: "d.example" } },
     fx: { path: ["ARS", "USDC", "ARS"], who_holds_risk: "receiving_anchor" },
     compliance: { source_jurisdiction: "AR", dest_jurisdiction: "AR" },
     settlement: { network: "public", asset_issuer: "GISSUER" },
@@ -21,7 +21,7 @@ const intent: PaymentIntent = {
   idempotencyKey: "k",
   corridorId: "test",
   sender: { id: "s" },
-  recipient: { id: "R" },
+  recipient: { id: "r" },
   sourceAmount: { asset: "USDC", amount: "100" },
 };
 
@@ -45,7 +45,7 @@ describe("conformanceSuite", () => {
       intent,
       corridor(),
     );
-    const quoteProbe = probes.find((p) => p.name === "quote returns a future expiry")!!;
+    const quoteProbe = probes.find((p) => p.name === "quote returns a future expiry")!;
     expect(await quoteProbe.run()).toBe(false);
   });
 
@@ -57,7 +57,7 @@ describe("conformanceSuite", () => {
     );
     const complianceProbe = probes.find(
       (p) => p.name === "compliance resolves to a known status",
-    )!!;
+    )!;
     expect(await complianceProbe.run()).toBe(true);
   });
 });
@@ -68,7 +68,7 @@ describe("createMockAdapter", () => {
   });
 
   it("honors an overridden name", () => {
-    expect(createMockAdapter( { name: "acme" }).name).toBe("acme");
+    expect(createMockAdapter({ name: "acme" }).name).toBe("acme");
   });
 
   it("requestQuote and openTransaction share a single incrementing counter", async () => {
@@ -89,7 +89,7 @@ describe("createMockAdapter", () => {
   });
 
   it("getTransaction: terminalFailure takes priority over settled", async () => {
-    const r = await createMockAdapter( { terminalFailure: true, settled: true } ).getTransaction(
+    const r = await createMockAdapter({ terminalFailure: true, settled: true }).getTransaction(
       "tx_1",
     );
     expect(r.ok && r.value).toEqual({
@@ -105,22 +105,90 @@ describe("createMockAdapter", () => {
   });
 
   it("getTransaction: settled:false reports pending_receiver", async () => {
-    const r = await createMockAdapter({ settled: false } ).getTransaction("tx_1");
+    const r = await createMockAdapter({ settled: false }).getTransaction("tx_1");
     expect(r.ok && r.value).toEqual({ status: "pending_receiver", settled: false });
   });
 
-  it("refund: defaults to completed", async () => {
-    const r = await createMockAdapter().refund("tx_1");
-    expect(r.ok && r.value).toEqual({ status: "completed" });
+  it("getTransaction: includes refund details when configured", async () => {
+    const refundStatus = {
+      amountRefunded: { asset: "USDC", amount: "100.00" },
+      amountFee: { asset: "USDC", amount: "2.00" },
+      payments: [
+        {
+          id: "ref-pay-1",
+          idType: "stellar",
+          amount: { asset: "USDC", amount: "98.00" },
+          fee: { asset: "USDC", amount: "2.00" },
+        },
+      ],
+      completeness: "full" as const,
+    };
+    const r = await createMockAdapter({ refundStatus }).getTransaction("tx_1");
+    expect(r.ok && r.value.refunds).toEqual(refundStatus);
   });
 
-  it("refund: accepted but stays pending", async () => {
-    const r = await createMockAdapter( { refund: "pending" } ).refund("tx_1");
-    expect(r.ok && r.value).toEqual({ status: "pending" });
+  it('requestRefund: refund:"complete" reports the refund already done', async () => {
+    const r = await createMockAdapter({ refund: "complete" }).requestRefund(
+      "tx_1",
+      { asset: "USDC", amount: "100.00" },
+      "payout timed out",
+    );
+    expect(r.ok && r.value.status).toBe("refunded");
   });
 
-  it("refund: rejected by the anchor", async () => {
-    const r = await createMockAdapter( { refund: "rejected" } ).refund("tx_1");
-    expect(r.ok && r.value).toEqual({ status: "rejected" });
+  it('requestRefund: refund:"pending" reports it accepted but not yet moved', async () => {
+    const r = await createMockAdapter({ refund: "pending" }).requestRefund(
+      "tx_1",
+      { asset: "USDC", amount: "100.00" },
+      "payout timed out",
+    );
+    expect(r.ok && r.value.status).toBe("pending");
+  });
+
+  it('requestRefund: refund:"rejected" reports the anchor declining', async () => {
+    const r = await createMockAdapter({ refund: "rejected" }).requestRefund(
+      "tx_1",
+      { asset: "USDC", amount: "100.00" },
+      "payout timed out",
+    );
+    expect(r.ok && r.value.status).toBe("rejected");
+  });
+
+  it("requestRefund: defaults to pending refund response", async () => {
+    const adapter = createMockAdapter();
+    const r = await adapter.requestRefund(
+      "tx_1",
+      { asset: "USDC", amount: "100.00" },
+      "payout timed out",
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.transactionId).toBe("tx_1");
+      expect(r.value.status).toBe("pending");
+      expect(r.value.message).toContain("100.00 USDC");
+    }
+  });
+
+  it("requestRefund: honors overridden refundResult", async () => {
+    const adapter = createMockAdapter({
+      refundResult: {
+        ok: true,
+        value: {
+          transactionId: "tx_custom",
+          status: "refunded",
+          refundId: "ref_123",
+        },
+      },
+    });
+    const r = await adapter.requestRefund(
+      "tx_custom",
+      { asset: "USDC", amount: "50" },
+      "reason",
+    );
+    expect(r.ok && r.value).toEqual({
+      transactionId: "tx_custom",
+      status: "refunded",
+      refundId: "ref_123",
+    });
   });
 });
