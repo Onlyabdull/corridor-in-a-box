@@ -121,6 +121,22 @@ export interface TransactionStatus {
   readonly refunds?: RefundInfo;
 }
 
+/**
+ * Reference returned when a refund request is accepted for processing.
+ *
+ * A refund is *requested* here and *reported* on `TransactionStatus.refunds`:
+ * the request is the sender's side of the conversation, the report is the
+ * anchor's. They are separate types because a request can be accepted and still
+ * move no money yet — `status: "pending"` is the normal outcome, and the amounts
+ * only become knowable later, on the transaction record the poll already reads.
+ */
+export interface RefundRef {
+  readonly transactionId: string;
+  readonly status: "pending" | "refunded" | "rejected";
+  readonly refundId?: string;
+  readonly message?: string;
+}
+
 export interface AnchorAdapter {
   readonly name: string;
   /** SEP-38: request an FX quote for this intent on this corridor. */
@@ -135,6 +151,20 @@ export interface AnchorAdapter {
   ): Promise<Outcome<OpenTransaction>>;
   /** Poll transaction status for reconciliation. */
   getTransaction(transactionId: string): Promise<Outcome<TransactionStatus>>;
+  /**
+   * Request a refund from the receiving anchor.
+   *
+   * Refunds are anchor-driven operations, NOT unilateral on-chain reversals.
+   * Standard SEP-31 anchors do not expose a sender-initiated refund endpoint
+   * (the adapter returns REFUND_UNSUPPORTED), but bespoke anchor integrations
+   * or proprietary OTC desks may implement this method to request an anchor-side
+   * refund.
+   */
+  requestRefund(
+    transactionId: string,
+    amount: Money,
+    reason: string,
+  ): Promise<Outcome<RefundRef>>;
 }
 
 // --- Conformance ---------------------------------------------------------
@@ -183,6 +213,10 @@ export interface MockAdapterOptions {
   settled?: boolean;
   /** Make getTransaction report a terminal anchor failure (error/expired/refunded). */
   terminalFailure?: boolean;
+  /** Custom refund handler or result for mock testing. */
+  refundResult?: Outcome<RefundRef>;
+  /** Refund detail for getTransaction to report, on the `refunds` field. */
+  refundStatus?: RefundInfo;
 }
 
 export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter {
@@ -218,11 +252,21 @@ export function createMockAdapter(opts: MockAdapterOptions = {}): AnchorAdapter 
           status: "error",
           settled: false,
           terminalFailure: true,
+          refunds: opts.refundStatus,
         });
       }
       return ok<TransactionStatus>({
         status: opts.settled === false ? "pending_receiver" : "completed",
         settled: opts.settled !== false,
+        refunds: opts.refundStatus,
+      });
+    },
+    async requestRefund(transactionId, amount, reason) {
+      if (opts.refundResult) return opts.refundResult;
+      return ok<RefundRef>({
+        transactionId,
+        status: "pending",
+        message: `Refund requested for ${amount.amount} ${amount.asset}: ${reason}`,
       });
     },
   };
